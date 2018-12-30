@@ -40,7 +40,7 @@ public:
 	virtual void end() = 0;
 	virtual sl::aabox3f getSceneBBox() = 0;
 
-
+	inline Camera* getCamera() { return _camera; }
 	inline void setCamera(Camera * cam) { _camera = cam; }
 	inline void setScreenResolution(int width, int height) { _screenRes[0] = float(width); _screenRes[1] = float(height); }
 	inline RendererMonitor::FrameStats getStats() { return _rendererMonitor.getStats(); }

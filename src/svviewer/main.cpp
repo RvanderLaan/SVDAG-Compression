@@ -72,6 +72,25 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 	if (key == GLFW_KEY_6) renderer->incPixelTolerance();
 	if (key == GLFW_KEY_R) renderer->nextViewerRenderMode();
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
+
+}
+
+void updateSceneEvents(GLFWwindow *win) {
+
+	// Custom scene updating events
+	if (glfwGetKey(win, GLFW_KEY_DELETE) == GLFW_PRESS) {
+		//if (_state == S_SVO || _state == S_DAG) {
+		int nodeIndex = encoded_octree->getNodeIndex(cam->getCurrentConfig().pos);
+		if (nodeIndex == -1) {
+			nodeIndex = (std::rand() % encoded_octree->getNNodes());
+		}
+		renderer->clearVoxel(nodeIndex);
+	}
+}
+
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	renderer->getCamera()->scroll_callback(xoffset, yoffset);
 }
 
 void updateInfo() {
@@ -185,6 +204,7 @@ int main(int argc, char ** argv)
 
 	// Keyboard callback
 	glfwSetKeyCallback(window, optionsKeyCallback);
+	glfwSetScrollCallback(window, scrollCallback);
 
 	renderer->setCamera(cam);
 	renderer->init();
@@ -206,6 +226,8 @@ int main(int argc, char ** argv)
 	do {
 		// UPDATE ------------------
 		cam->update();
+
+		updateSceneEvents(window);
 
 		// DRAW --------------------
 		glClear(GL_COLOR_BUFFER_BIT);

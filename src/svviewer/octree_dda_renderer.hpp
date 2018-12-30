@@ -54,6 +54,8 @@ public:
 	virtual unsigned int getNLevels() { return _encodedOctree->getNLevels(); }
 	inline void selectRenderMode(RenderMode mode) { _selectedRenderMode = mode; }
 
+	virtual void clearVoxel(int position);
+
 	inline sl::aabox3f getSceneBBox() { return _encodedOctree->getSceneBBox(); }
 	inline void setEncodedOctree(EncodedOctree * eo) { ; }
 

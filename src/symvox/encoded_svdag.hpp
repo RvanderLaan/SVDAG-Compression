@@ -39,6 +39,7 @@ public:
 	virtual bool load(const std::string filename);
 	virtual bool save(const std::string filename) const;
 	virtual void encode(const GeomOctree & octree);
+	virtual int getNodeIndex(sl::point3f p) const;
 	virtual void * getDataPtr() const { return (void *)_data.data(); }
 	virtual size_t getDataSize() const { return _data.size() * sizeof(sl::uint32_t); }
 	virtual std::string getDescription() const { return "SVDAG. Encoded just like [Kampe et al.] paper."; }
@@ -49,8 +50,6 @@ public:
 	virtual bool isLeaf(const TravNode &node) const;
 	virtual int getLeafSize() const { return 2; }
 	virtual bool hasVoxel(const TravNode &leaf, const int i, const int j, const int k) const;
-
-
 	
 	inline sl::uint32_t getFirstLeafPtr() { return _firstLeafPtr; }
 

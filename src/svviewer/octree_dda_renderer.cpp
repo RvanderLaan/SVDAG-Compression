@@ -205,7 +205,7 @@ void OctreeDDARenderer::init() {
 		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
 		if ((dag->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
 		printf("Uploading Data to TBO: %zu texels [%s]\n", dag->getDataSize() / 16, sl::human_readable_size(dag->getDataSize()).c_str());
-		glBufferData(GL_TEXTURE_BUFFER, dag->getDataSize(), dag->getDataPtr(), GL_STATIC_DRAW);
+		glBufferData(GL_TEXTURE_BUFFER, dag->getDataSize(), dag->getDataPtr(), GL_DYNAMIC_DRAW);
 		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
 		glBindTexture(GL_TEXTURE_BUFFER, 0);
 		glBindBuffer(GL_TEXTURE_BUFFER, 0);
@@ -389,6 +389,30 @@ void OctreeDDARenderer::end() {
 	clearState();
 	glDeleteTextures(4, _glTex);
 	glDeleteBuffers(2, _glBuf);
+}
+
+void OctreeDDARenderer::clearVoxel(int position)
+{
+	EncodedSVDAG * dag = static_cast<EncodedSVDAG *>(_encodedOctree);
+
+	int numNodes = (dag->getDataSize() / sizeof(sl::uint32_t));
+	int nodeIndex = position;
+
+	if (nodeIndex < 0 || nodeIndex > numNodes) {
+		printf("\t- Voxel index for deletion is out of bounds! %u / %u \n", nodeIndex, numNodes);
+		return;
+	}
+	else {
+		printf("\t- Deleting voxel index %u \n", nodeIndex);
+	}
+
+	printf("Index: %u, sizeof uint32_t: %u, uint32_t(0): %u \n", nodeIndex, sizeof(sl::uint32_t), sl::uint32_t(0));
+
+	sl::uint32_t subData[] = { sl::uint32_t(0) };
+
+	glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
+	glBufferSubData(GL_TEXTURE_BUFFER, nodeIndex * sizeof(sl::uint32_t), sizeof(sl::uint32_t), &subData);
+	glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
 
 std::string OctreeDDARenderer::getOctreeFormatName() {

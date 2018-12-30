@@ -48,6 +48,11 @@ public:
 		return 0;
 	}
 
+	virtual int getNodeIndex(sl::point3f p) const {
+		printf("WARNING:EncodedOctree:getNodeIndex() Not implemented\n");
+		return 0;
+	}
+
 	// Traversal interface ---------------------------------------
 
 public:

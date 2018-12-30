@@ -45,6 +45,11 @@ Camera::Camera(GLFWwindow * win) {
 #endif
 }
 
+void Camera::scroll_callback(double xoffset, double yoffset) {
+	_walkFactor += sl::sign(yoffset) * 0.05;
+	printf("Walkfactor: %f\n", _walkFactor);
+}
+
 void Camera::update(bool sticky) {
 
 	if (_state == WT_PLAYING) {

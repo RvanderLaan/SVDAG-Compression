@@ -66,6 +66,7 @@ public:
 public:
 	Camera(GLFWwindow * win);
 	void update(bool sticky = true);
+	void scroll_callback(double xoffset, double yoffset);
 	
 	void setInitCamera(sl::point3f pos, sl::point3f target, TCoordinateSystem coordSyst, float fov, float nearClip = 0.1f, float farClip = 1000.0f);
 	inline void setZoomFactor(float zf) { _zoomFactor = zf; }
