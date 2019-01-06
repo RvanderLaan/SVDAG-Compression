@@ -37,7 +37,7 @@ Camera::Camera(GLFWwindow * win) {
 	_zoomFactor = 1.0f;
 	_rotFactor = 1.0f;
 	_panFactor = 0.6f;
-	_walkFactor = 1.0f;
+	_walkFactor = 0.1f;
 	setInitCamera(sl::point3f(0, 0, 10.0f), sl::point3f(0, 0, 0), Y_UP, 45.0f);
 	updateMatrices();
 #if 0
@@ -46,7 +46,7 @@ Camera::Camera(GLFWwindow * win) {
 }
 
 void Camera::scroll_callback(double xoffset, double yoffset) {
-	_walkFactor += sl::sign(yoffset) * 0.05;
+	_walkFactor *= yoffset > 0 ? 1.05 : 0.95;
 	printf("Walkfactor: %f\n", _walkFactor);
 }
 

@@ -186,25 +186,23 @@ int EncodedSVDAG::getNodeIndex(sl::point3f p) const
 		if (mZ) p[2] = 2.f * nodeCenter[2] - p[2];
 
 		int selectedChild = 4 * int(p[0] > nodeCenter[0]) + 2 * int(p[1] > nodeCenter[1]) + int(p[2] > nodeCenter[2]);
-
 		if (!hasChild(curNode, selectedChild)) {
-			printf("Stopping at level %u", i);
+			printf("L%u|", i);
 			break;
 		}
-		float hs = getHalfSide(i);
+		float hs = getHalfSide(i + 1);
 		nodeCenter[0] += (p[0] > nodeCenter[0]) ? hs : -1.f * hs;
 		nodeCenter[1] += (p[1] > nodeCenter[1]) ? hs : -1.f * hs;
 		nodeCenter[2] += (p[2] > nodeCenter[2]) ? hs : -1.f * hs;
 
 		curNode = getChild(curNode, selectedChild, mX, mY, mZ);
+
+		if (isLeaf(curNode)) {
+			return curNode.idx;
+		}
 	}
-	if (isLeaf(curNode)) {
-		return curNode.idx;
-	}
-	else {
-		printf("No leaf found at given position for deletion \n");
-		return -1;
-	}
+	// printf("No leaf found at given position for deletion \n");
+	return -1;
 }
 
 EncodedSVDAG::TravNode EncodedSVDAG::getRootTravNode() const

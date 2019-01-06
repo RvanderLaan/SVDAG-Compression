@@ -79,6 +79,13 @@ public:
 	inline sl::projective_map3f getProjMatrixInv() { return _projMatrixInv; }
 	inline sl::rigid_body_map3f getViewMatrixInv() { return _viewMatrixInv; }
 	inline Config getCurrentConfig() { return _cam; }
+	inline sl::point2f getCursorCoords() { return _coords; }
+	inline sl::point2f getCursorCoordsNorm() {
+		sl::point2f normCoords = sl::point2f(_coords);
+		normCoords[0] /= _winWidth;
+		normCoords[1] /= _winHeight;
+		return normCoords;
+	}
 
 	void recordWalkthrough(std::string filename = "");
 	void loadWalkthrough(std::string filename);
