@@ -59,6 +59,8 @@ uniform isamplerBuffer childIndir;
 
 #if VIEWER_MODE
 uniform int viewerRenderMode;
+uniform uint selectedVoxelIndex;
+uniform bool randomColors;
 #elif SHADOW_MODE
 uniform sampler2D hitPosTex;
 uniform sampler2D hitNormTex;
@@ -518,11 +520,12 @@ void init(inout Ray r, inout traversal_status ts) {
 //		-4   := out of scene bbox
 //	Y: level of the intersection (-1 => no intersection)
 //	Z: num Iterations used.
+//  W: node index (-1 => no intersection)
 
-vec3 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
+vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 	
 	if (!transform_ray(r, t_min_max))
-		return vec3(-4.0,0,0); // out of scene Bbox
+		return vec4(-4.0,0,0,-1); // out of scene Bbox
 	
 	const float scale = 2.0 * rootHalfSide;
 	traversal_status ts;
@@ -538,14 +541,14 @@ vec3 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 			dda_next(ts);
 			if (!in_bounds(ts.local_idx, ts.current_node_size)) {
 				if (stack_is_empty()) {
-					return vec3(-1.,0,float(iteration_count)); // inside scene BBox, but no intersection
+					return vec4(-1.,0,float(iteration_count),-1); // inside scene BBox, but no intersection
 				}
 				up_in(r, ts);
 			}
 		} else {
 			const bool hit = (ts.level >= max_level || resolution_ok(ts.t_current, ts.cell_size, projection_factor)); 
 			if (hit) {
-				return vec3(ts.t_current * scale, ts.cell_size * scale, float(iteration_count));  // intersection
+				return vec4(ts.t_current * scale, ts.cell_size * scale, float(iteration_count), ts.node_index);  // intersection
 			} else {
 				down_in(r, ts);
 				fetch_data(ts);
@@ -556,8 +559,8 @@ vec3 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 		++iteration_count;
 	} while ((ts.t_current < t_min_max.y) && (iteration_count < maxIters));
 	
-	if (iteration_count >= maxIters) return vec3(-3.,0,float(iteration_count)); // too much itarations
-	return vec3(-2.,0,float(iteration_count)); // intersection out of t bounds
+	if (iteration_count >= maxIters) return vec4(-3.,0,float(iteration_count), -1); // too much itarations
+	return vec4(-2.,0,float(iteration_count), -1); // intersection out of t bounds
 }
 
 
@@ -604,6 +607,30 @@ float getMinT(in const int delta) {
 
 
 #if VIEWER_MODE
+// https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+uint hash( uint x ) {
+    x += ( x << 10u );
+    x ^= ( x >>  6u );
+    x += ( x <<  3u );
+    x ^= ( x >> 11u );
+    x += ( x << 15u );
+    return x;
+}
+float floatConstruct( uint m ) {
+    const uint ieeeMantissa = 0x007FFFFFu; // binary32 mantissa bitmask
+    const uint ieeeOne      = 0x3F800000u; // 1.0 in IEEE binary32
+
+    m &= ieeeMantissa;                     // Keep only mantissa bits (fractional part)
+    m |= ieeeOne;                          // Add fractional part to 1.0
+
+    float  f = uintBitsToFloat( m );       // Range [1:2]
+    return f - 1.0;                        // Range [0:1]
+}
+// Pseudo-random value in half-open range [0:1].
+float randomFloat( uint x ) { return floatConstruct(hash(x)); }
+//vec3 randomColor(uint x) {
+//	return vec3(randomFloat(x), randomFloat(x / 2), randomFloat(x / 3));
+//}
 
 void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
@@ -617,7 +644,7 @@ void main() {
 	}
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-	vec3 result = trace_ray(r, t_min_max, projectionFactor);
+	vec4 result = trace_ray(r, t_min_max, projectionFactor);
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -630,6 +657,23 @@ void main() {
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
 	
 		color = vec3(t, t, t);
+
+		// Assign random colors based on the index of a node
+		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
+//			color *= randomColor(uint(result.w));
+			uint nodeIndex = uint(result.w);
+			vec3 randomColor = normalize(vec3(
+				(nodeIndex % 100) / 100.f,
+				((3 * nodeIndex) % 200) / 200.f,
+				((2 * nodeIndex) % 300) / 300.f
+			));
+			color *= randomColor;
+		} else if (result.w == selectedVoxelIndex) {
+			// Highlight selected voxel index with blue
+			color.r *= 0.5f;
+			color.g *= 0.5f;
+			color.b = 1.f;
+		}
 	}
 	else {
 		if (result.x == -4.) // no intersection, out of BBox => background
@@ -658,7 +702,7 @@ void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
 	Ray r = computeCameraRay(screenCoords);	
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-	vec3 result = trace_ray(r, t_min_max, projectionFactor);
+	vec4 result = trace_ray(r, t_min_max, projectionFactor);
 	if (result.x > 0) // Intersection!!!
 		output_t = result.xyz;
 	else
@@ -683,7 +727,7 @@ void main() {
 	r.d = normalize(lightToP);
 	vec2 t_min_max = vec2(0, lightToPLength);
 	const float projFactor = lightToPLength / cellSize;
-	vec3 result = trace_ray(r, t_min_max, projFactor);
+	vec4 result = trace_ray(r, t_min_max, projFactor);
 
 	output_t = (result.x > 0) ? 0.0 : 1.0;
 }
@@ -717,7 +761,7 @@ void main() {
 	for(int i=0; i<numAORays; i++) {
 		aoRay.d = normalize(tnb *  hsSamples[(i+int(gl_FragCoord.x*gl_FragCoord.y))%N_HS_SAMPLES]);
 		//aoRay.d = normalize(tnb *  hsSamples[i]);
-		vec3 result = trace_ray(aoRay, t_min_max, projFactor);
+		vec4 result = trace_ray(aoRay, t_min_max, projFactor);
 		if(result.x > 0) k += 1.0;// - (result.x/0.3);
 	}
 	float visibility = (numAORays>0) ? 1.0 - (k/float(numAORays)) : 1.0;

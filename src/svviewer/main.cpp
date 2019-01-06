@@ -72,54 +72,70 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 	if (key == GLFW_KEY_6) renderer->incPixelTolerance();
 	if (key == GLFW_KEY_R) renderer->nextViewerRenderMode();
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
+	if (key == GLFW_KEY_K) renderer->toggleRandomColors();
 
 }
 
 static sl::vector3f fromHomog(const sl::vector4f v) { return sl::vector3f(v[0] / v[3], v[1] / v[3], v[2] / v[3]); }
 static sl::vector3f v4ToV3(const sl::vector4f v) { return sl::vector3f(v[0], v[1], v[2]); }
 
+/** Returns -1 when no voxel is found */
+int getVoxelIndexAtCursor() {
+	// Transform [0, 1] cursor coords to [-1, 1]
+	sl::point2f coords = cam->getCursorCoordsNorm();
+	coords[0] = coords[0] * 2 - 1;
+	coords[1] = 1.f - coords[1] * 2;
+	printf("mouse coords: %f, %f - \t", coords[0], coords[1]);
+
+	// Apply projection matrix
+	sl::vector3f rayStart = fromHomog(cam->getProjMatrixInv().as_matrix() * sl::vector4f(coords[0], coords[1], 0, 1));
+	sl::vector3f rayEnd = fromHomog(cam->getProjMatrixInv().as_matrix() * sl::vector4f(coords[0], coords[1], 1, 1));
+	sl::vector3f rayDir = (rayEnd - rayStart).ok_normalized();
+	// Apply view matrix
+	rayStart = v4ToV3(cam->getViewMatrixInv().as_matrix() * sl::vector4f(rayStart[0], rayStart[1], rayStart[2], 1));
+	rayEnd = v4ToV3(cam->getViewMatrixInv().as_matrix() * sl::vector4f(rayEnd[0], rayEnd[1], rayEnd[2], 1));
+	rayDir = (rayEnd - rayStart).ok_normalized();
+	printf("mouse ray dir: %f, %f, %f \n", rayDir[0], rayDir[1], rayDir[2]);
+
+	sl::point3f delPos = cam->getCurrentConfig().pos;
+	for (int i = 0; i < 100; i++) {
+		// Traverse ray along small increments.
+		// Todo: use stack + dda
+		delPos += rayDir * 0.05f;
+
+		int nodeIndex = encoded_octree->getNodeIndex(delPos);
+		if (nodeIndex == -1) {
+			// renderer->setSelectedVoxelIndex(0);
+			continue;
+			//return;
+			// nodeIndex = (std::rand() % encoded_octree->getNNodes());
+		}
+		else {
+			// printf("\nDELETED A VOXEL!!!!!!!!!!!!!!!!!!!! \n");
+			// break;
+			return nodeIndex;
+		}
+	}
+	return -1;
+}
+
+// Custom scene updating events
 void updateSceneEvents(GLFWwindow *win) {
 
-	// Custom scene updating events
-	if (glfwGetKey(win, GLFW_KEY_DELETE) == GLFW_PRESS) {
+	bool doHighlight = glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS;
+	bool doDelete = glfwGetKey(win, GLFW_KEY_DELETE) == GLFW_PRESS;
+	
+	if (doHighlight || doDelete) {
 		//if (_state == S_SVO || _state == S_DAG) {
 
-		// Delete voxel at cursor position
-		///////////////////////////////////////
+		int nodeIndex = getVoxelIndexAtCursor();
 
-		// Transform [0, 1] cursor coords to [-1, 1]
-		sl::point2f coords = cam->getCursorCoordsNorm();
-		coords[0] = coords[0] * 2 - 1;
-		coords[1] = 1.f - coords[1] * 2;
-		printf("mouse coords: %f, %f - \t", coords[0], coords[1]);
-		
-		// Apply projection matrix
-		sl::vector3f rayStart = fromHomog(cam->getProjMatrixInv().as_matrix() * sl::vector4f(coords[0], coords[1], 0, 1));
-		sl::vector3f rayEnd = fromHomog(cam->getProjMatrixInv().as_matrix() * sl::vector4f(coords[0], coords[1], 1, 1));
-		sl::vector3f rayDir = (rayEnd - rayStart).ok_normalized();
-		// Apply view matrix
-		rayStart = v4ToV3(cam->getViewMatrixInv().as_matrix() * sl::vector4f(rayStart[0], rayStart[1], rayStart[2], 1));
-		rayEnd = v4ToV3(cam->getViewMatrixInv().as_matrix() * sl::vector4f(rayEnd[0], rayEnd[1], rayEnd[2], 1));
-		rayDir = (rayEnd - rayStart).ok_normalized();
-		printf("mouse ray dir: %f, %f, %f \n", rayDir[0], rayDir[1], rayDir[2]);
-
-		sl::point3f delPos = cam->getCurrentConfig().pos;
-		for (int i = 0; i < 100; i++) {
-			delPos += rayDir * 0.05f;
-			int nodeIndex = encoded_octree->getNodeIndex(delPos);
-			if (nodeIndex == -1) {
-				continue;
-				//return;
-				nodeIndex = (std::rand() % encoded_octree->getNNodes());
-			}
-			else {
-				renderer->clearVoxel(nodeIndex);
-				printf("\nDELETED A VOXEL!!!!!!!!!!!!!!!!!!!! \n");
-				break;
-			}
-			// Traverse ray along small increments
+		if (doHighlight) {
+			renderer->setSelectedVoxelIndex(nodeIndex == -1 ? 0 : nodeIndex);
 		}
-		printf("\n");
+		else if (doDelete) {
+			renderer->clearVoxel(nodeIndex);
+		}
 	}
 }
 

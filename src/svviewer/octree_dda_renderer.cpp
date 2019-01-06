@@ -39,6 +39,8 @@ OctreeDDARenderer::OctreeDDARenderer(EncodedOctree * eo) {
 	_shadowsInputPosTex = 5;
 	_shadowsInputNormTex = 6;
 
+	_selectedVoxelIndex = 0;
+	_randomColors = true;
 
 	if (dynamic_cast<EncodedSVO*>(_encodedOctree) != NULL) {
 		_octreeFormat = SVO;
@@ -368,6 +370,8 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 
 	if (_selectedRenderMode == VIEWER)
 		glUniform1i(_program[_selectedRenderMode].getUniformID("viewerRenderMode"), _viewerRenderMode);
+		glUniform1ui(_program[_selectedRenderMode].getUniformID("selectedVoxelIndex"), _selectedVoxelIndex);
+		glUniform1i(_program[_selectedRenderMode].getUniformID("randomColors"), _randomColors);
 
 	if (_selectedRenderMode == SHADOW)
 		glUniform3fv(_program[_selectedRenderMode].getUniformID("lightPos"), 1, _lightPos.to_pointer());
