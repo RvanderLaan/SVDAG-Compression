@@ -75,8 +75,16 @@ int main(int argc, char ** argv) {
 
 	Scene scene;
 
+    bool isLas = false;
+
 	if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
 		scene.loadObj(inputFile, true, false, false, false, true);
+    } else if (strstr(inputFile.c_str(), ".las") || strstr(inputFile.c_str(), ".LAS")) {
+        scene.loadLas(inputFile);
+        isLas = true;
+    } else if (strstr(inputFile.c_str(), ".laz") || strstr(inputFile.c_str(), ".LAZ")) {
+        scene.loadLas(inputFile);
+        isLas = true;
 	} else {
 		printf("Can't read input file '%s'. Only supported ASCII Obj files.\n", inputFile.c_str());
 		exit(1);
@@ -88,8 +96,12 @@ int main(int argc, char ** argv) {
 
 	EncodedSVO svo;
 	if (levelStep == 0) {
-		octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
-		svo.encode(octree);
+        if (!isLas) {
+            octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
+        } else {
+            octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
+        }
+        svo.encode(octree);
 		octree.toDAG();
 	}
 	else {

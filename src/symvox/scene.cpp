@@ -26,6 +26,10 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
+//#if BUILD_LASPARSER
+#include <liblas/liblas.hpp>
+//#endif
+
 #ifndef _MSC_VER
 #	include <string.h>
 #	define strtok_s strtok_r
@@ -410,3 +414,28 @@ void Scene::buildTriVector(bool clearOtherData) {
 		_indexedTris.shrink_to_fit();
 	}
 }
+
+//#if BUILD_LASPARSER
+void Scene::loadLas(std::string fileName) {
+
+    printf("* Loading '%s'...\n", fileName.c_str());
+
+    // Parsing LAS based on https://liblas.org/tutorial/cpp.html
+    std::ifstream ifs;
+    ifs.open(fileName, std::ios::in | std::ios::binary);
+
+    liblas::ReaderFactory f;
+    liblas::Reader reader = f.CreateWithStream(ifs);
+
+    // After the reader has been created, you can access members of the Public Header Block
+    liblas::Header const& header = reader.GetHeader();
+
+    std::cout << "Compressed: " << ((header.Compressed() == true) ? "true" : "false");
+    std::cout << "Signature: " << header.GetFileSignature() << '\n';
+    std::cout << "Points count: " << header.GetPointRecordsCount() << '\n';
+
+    _bbox[0] = sl::point3f(header.GetMinX(), header.GetMinY(), header.GetMinZ());
+    _bbox[1] = sl::point3f(header.GetMaxX(), header.GetMaxY(), header.GetMaxZ());
+    printf("\t- Bbox: [%.3f %.3f %.3f]  [%.3f %.3f %.3f]\n", _bbox[0][0], _bbox[0][1], _bbox[0][2], _bbox[1][0], _bbox[1][1], _bbox[1][2]);
+}
+//#endif

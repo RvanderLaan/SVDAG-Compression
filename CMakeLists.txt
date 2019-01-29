@@ -36,13 +36,24 @@ find_package(OpenGL)
 find_package(GLFW)
 find_package(GLEW)
 
+# Optional, for parsing LAS files
+find_package(LIBLAS)
+
 ############### Options
 IF(OpenGL_FOUND AND GLFW_FOUND AND GLEW_FOUND)
 	SET(BUILD_SVVIEWER TRUE CACHE BOOL "Build SymVox GL Viewer")
 ELSE()
 	SET(BUILD_SVVIEWER FALSE CACHE BOOL "Build SymVox GL Viewer")
-	Message("OpenGL, GLFW or GLEW libraries missing. Not building SymVoc GL Viewer")
+        Message("OpenGL, GLFW or GLEW libraries missing. Not building SymVoX GL Viewer")
 ENDIF(OpenGL_FOUND AND GLFW_FOUND AND GLEW_FOUND)
+
+IF(LIBLAS_FOUND)
+        SET(BUILD_LASPARSER TRUE CACHE BOOL "Build SymVox LAS Parser")
+        MESSAGE( "LIBLAS library: Found!" )
+ELSE()
+        SET(BUILD_LASPARSER FALSE CACHE BOOL "Build SymVox LAS Parser")
+        Message("LIBLAS library missing. Not building SymVoX LAS Parser")
+ENDIF(LIBLAS_FOUND)
 
 ############## Default target to build
 
@@ -89,7 +100,7 @@ INCLUDE_DIRECTORIES( ${SL_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${OPENGL_INCLUDE_DIRS} )
 INCLUDE_DIRECTORIES( ${GLFW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${GLEW_INCLUDE_DIR} )
-
+INCLUDE_DIRECTORIES( ${LIBLAS_INCLUDE_DIRS} )
 
 #############################################################
 ##################### SYMVOX LIBRARY ###########################
@@ -118,7 +129,7 @@ ADD_LIBRARY( symvox
 	shaders/octree_dda.frag.glsl
 )
 
-TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES})
+TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
 
 #############################################################
 ####################### SYMVOX BUILDER #########################
@@ -157,6 +168,14 @@ IF(BUILD_SVVIEWER)
 		${OPENGL_LIBRARIES}
 		${GLFW_LIBRARIES}
 		${GLEW_LIBRARIES}
+		X11
+		Xxf86vm
+		Xinerama
+		Xcursor
+		rt
+		m
+		pthread
+		${CMAKE_DL_LIBS}
 	)
 
 ENDIF(BUILD_SVVIEWER)

@@ -103,7 +103,8 @@ public:
 	// Main methods
 	void buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox3d bbox, bool verbose = false);
 	void buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL, bool putMaterialIdInLeaves = false);
-	void toDAG(bool internalCall = false);
+    void buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL);
+    void toDAG(bool internalCall = false);
 	void toSDAG(bool internalCall = false);
 	void toSDAGCanonical();
 

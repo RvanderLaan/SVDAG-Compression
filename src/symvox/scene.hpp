@@ -53,6 +53,7 @@ public:
 	Scene();
 	
 	void loadObj(std::string fileName, bool tryLoadBinCache = true, bool loadMaterials = true, bool loadNormals = false, bool recomputeNormals = false, bool doBuildTriVector = false);
+    void loadLas(std::string fileName);
 
 	inline std::vector<sl::point3f> * getVertices() { return &_vertices; }
 	inline std::vector<sl::vector3f> * getNormals() { return &_normals; }

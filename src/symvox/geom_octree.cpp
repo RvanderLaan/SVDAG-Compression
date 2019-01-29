@@ -23,6 +23,9 @@
 #include <utility>
 #include <omp.h>
 
+#include <fstream>
+#include <liblas/liblas.hpp>
+
 #include<sl/external_array.hpp>
 
 #include <symvox/geom_octree.hpp>
@@ -39,6 +42,109 @@ GeomOctree::GeomOctree(const GeomOctree &other) : Octree (other) {
 	_stats = other._stats;
 	_data.reserve(other._data.size());
 	_data = other._data;
+}
+
+void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters) {
+    if (!internalCall) printf("* Building SVO... "); fflush(stdout);
+
+    _bbox = sl::conv_to<sl::aabox3f>::from(bbox);
+    _levels = levels;
+    sl::vector3f sides =_bbox.half_side_lengths() * 2.0f;
+    _rootSide = sl::max(sl::max(sides[0], sides[1]), sides[2]);
+
+    _data.resize(_levels);
+
+    Node root;
+    _data[0].push_back(root);
+
+    struct QueueItem {
+        QueueItem(id_t id, sl::uint8_t l, sl::point3d c) : nodeID(id), level(l), center(c) {}
+        id_t nodeID;
+        sl::uint8_t level;
+        sl::point3d center;
+    };
+    sl::point3d childrenCenters[8];
+    std::stack<QueueItem> queue;
+
+    if(!internalCall) _clock.restart();
+
+    // Prepare for reading the file
+    std::ifstream ifs;
+    ifs.open(fileName, std::ios::in | std::ios::binary);
+
+    liblas::ReaderFactory f;
+    liblas::Reader reader = f.CreateWithStream(ifs);
+
+    int numPoints = reader.GetHeader().GetPointRecordsCount();
+    int stepLogger = (int)round(numPoints / 10.f);
+
+    // For every point
+    unsigned int iPoint = 0;
+    while (reader.ReadNextPoint()) {
+        liblas::Point const& p = reader.GetPoint();
+
+        if (!internalCall && (iPoint % stepLogger == 0)) {
+            printf("%.0f%%..", round(100.f * (iPoint / (float)numPoints)));
+            fflush(stdout);
+        }
+
+        // Push the root node to a queue
+        queue.push(QueueItem(0, 0, bbox.center()));
+
+        // Traverse through all nodes in the tree that intersect with the triangle, starting at the root
+        while (!queue.empty()) {
+            const QueueItem qi = queue.top(); queue.pop();
+
+            // Store of the position (center) of all child nodes of the current node
+            double k = getHalfSideD(qi.level + 1);
+            childrenCenters[PXPYPZ] = qi.center + sl::vector3d(+k, +k, +k);
+            childrenCenters[PXPYNZ] = qi.center + sl::vector3d(+k, +k, -k);
+            childrenCenters[PXNYPZ] = qi.center + sl::vector3d(+k, -k, +k);
+            childrenCenters[PXNYNZ] = qi.center + sl::vector3d(+k, -k, -k);
+            childrenCenters[NXPYPZ] = qi.center + sl::vector3d(-k, +k, +k);
+            childrenCenters[NXPYNZ] = qi.center + sl::vector3d(-k, +k, -k);
+            childrenCenters[NXNYPZ] = qi.center + sl::vector3d(-k, -k, +k);
+            childrenCenters[NXNYNZ] = qi.center + sl::vector3d(-k, -k, -k);
+
+            // Traverse through all child nodes
+            Node & node = _data[qi.level][qi.nodeID];
+            for (int i = 7; i >= 0; --i) {
+                // If the point lies inside this child...
+                if ((p.GetX() >= childrenCenters[i][0] -k && p.GetX() < childrenCenters[i][0] +k)
+                 && (p.GetY() >= childrenCenters[i][1] -k && p.GetY() < childrenCenters[i][1] +k)
+                 && (p.GetZ() >= childrenCenters[i][2] -k && p.GetZ() < childrenCenters[i][2] +k)) {
+                    // Mark the child mask
+                    node.setChildBit(i);
+                    // If there is no child node inserted yet, and it's not a leaf, insert a child node
+                    if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
+                        node.children[i] = (id_t)_data[qi.level + 1].size();
+                        _data[qi.level + 1].emplace_back();
+                        _nNodes++;
+                        if (leavesCenters!=NULL && (qi.level == (_levels - 2))) leavesCenters->push_back(childrenCenters[i]);
+                    }
+                    // If this child is not a leaf, continue intersecting its children in a future iteration
+                    if((qi.level+1U) < _levels) queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
+                }
+            }
+        }
+        iPoint++;
+    }
+
+    cleanEmptyNodes();
+    if (!internalCall) _stats.buildSVOTime = _clock.elapsed();
+
+    // compute NVoxels
+    for (id_t i = 0; i < _data[_levels - 1].size(); ++i) {
+        _nVoxels += _data[_levels - 1][i].getNChildren();
+    }
+
+    _state = S_SVO;
+    _stats.nNodesSVO = _nNodes;
+    _stats.nNodesLastLevSVO = _data[_levels - 1].size();
+    _stats.simulatedEncodedSVOSize = (_stats.nNodesSVO - _stats.nNodesLastLevSVO) * 4;
+    _stats.nTotalVoxels = _nVoxels;
+
+    if(!internalCall) printf("OK! [%s]\n",sl::human_readable_duration(_stats.buildSVOTime).c_str());
 }
 
 void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves) {
@@ -67,17 +173,23 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 	if(!internalCall) _clock.restart();
 
 	int stepLogger = (int)round(_scene->getNRawTriangles() / 10.f);
-	for (std::size_t iTri = 0; iTri < _scene->getNRawTriangles(); iTri++) {
+    // For every triangle...
+    for (std::size_t iTri = 0; iTri < _scene->getNRawTriangles(); iTri++) {
 		if (!internalCall && (iTri % stepLogger == 0)) {
 			printf("%.0f%%..", round(100.f * (iTri / (float)_scene->getNRawTriangles())));
 			fflush(stdout);
 		}
 		unsigned int triMatId;
 		if (putMaterialIdInLeaves) triMatId = (unsigned int)_scene->getTriangleMaterialId(iTri);
+
+        // Push the root node to a queue
 		queue.push(QueueItem(0, 0, bbox.center()));
+
+        // Traverse through all nodes in the tree that intersect with the triangle, starting at the root
 		while (!queue.empty()) {
 			const QueueItem qi = queue.top(); queue.pop();
 
+            // Store of the position (center) of all child nodes of the current node
 			double k = getHalfSideD(qi.level + 1);
 			childrenCenters[PXPYPZ] = qi.center + sl::vector3d(+k, +k, +k);
 			childrenCenters[PXPYNZ] = qi.center + sl::vector3d(+k, +k, -k);
@@ -88,16 +200,21 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 			childrenCenters[NXNYPZ] = qi.center + sl::vector3d(-k, -k, +k);
 			childrenCenters[NXNYNZ] = qi.center + sl::vector3d(-k, -k, -k);
 
+            // Traverse through all child nodes
 			Node & node = _data[qi.level][qi.nodeID];
 			for (int i = 7; i >= 0; --i) {
+                // If the triangle intersects with this child...
 				if (_scene->getTrianglePtr(iTri) != NULL && testTriBox(childrenCenters[i], k, _scene->getTrianglePtr(iTri))) {
-					node.setChildBit(i);
+                    // Mark the child mask
+                    node.setChildBit(i);
+                    // If there is no child node inserted yet, and it's not a leaf, insert a child node
 					if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
 						node.children[i] = (id_t)_data[qi.level + 1].size();
 						_data[qi.level + 1].emplace_back();
 						_nNodes++;
 						if (leavesCenters!=NULL && (qi.level == (_levels - 2))) leavesCenters->push_back(childrenCenters[i]);
 					}
+                    // If this child is not a leaf, continue intersecting its children in a future iteration
 					if((qi.level+1U) < _levels) queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
 					else {
 						if (putMaterialIdInLeaves) node.children[i] = (id_t)triMatId;

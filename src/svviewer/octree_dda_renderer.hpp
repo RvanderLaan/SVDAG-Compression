@@ -108,7 +108,7 @@ protected:
 
 	bool _sdag4UseTex3D;
 
-	bool _useMinDepthOptimization{ false };
+    bool _useMinDepthOptimization{ true };
 	
 	// params mode VIEWER
 	int _viewerRenderMode;
