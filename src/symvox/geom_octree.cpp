@@ -246,7 +246,13 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 	if(!internalCall) printf("OK! [%s]\n",sl::human_readable_duration(_stats.buildSVOTime).c_str());
 }
 
-
+/**
+ * @brief GeomOctree::buildDAG The main function that builds sub-SVOs, individually reduces them to DAGs and merges them
+ * @param levels
+ * @param stepLevel
+ * @param bbox
+ * @param verbose
+ */
 void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox3d bbox, bool verbose) {
 	
 	printf("* Building DAG [stepLevel: %i]\n", stepLevel); fflush(stdout);
@@ -416,7 +422,10 @@ unsigned int GeomOctree::cleanEmptyNodes() {
 	return nDelPtrs;
 }
 
-
+/**
+ * @brief GeomOctree::toDAG Reduces an SVO to a DAG
+ * @param iternalCall Whether the function is called internally (only adds extra print)
+ */
 void GeomOctree::toDAG(bool iternalCall) {
 
 	if (_state == S_SVO) {
@@ -427,23 +436,28 @@ void GeomOctree::toDAG(bool iternalCall) {
 	}
 
 	_nNodes = 1;
+    /** Vector of duplicate nodes. Every index denotes the first duplicate of the node at that index in per level. */
 	std::vector<id_t> correspondences;
 	std::map<Node, id_t> uniqueNodesChecker;
 	std::vector<Node> uniqueNodes;
 
 	 sl::time_point ts = _clock.now();
 
+    // For every level, starting at the leaves...
 	for (unsigned int lev = _levels - 1; lev > 0; --lev) {
+        // Clear the lists used to keep track of correspondeces etc
 		size_t oldLevSize = _data[lev].size();
 		uniqueNodes.clear();
 		uniqueNodes.shrink_to_fit();
 		uniqueNodesChecker.clear();
 		correspondences.clear();
 		correspondences.resize(oldLevSize);
+
+        // For all nodes in this level...
 		for (id_t i = 0; i < _data[lev].size(); i++) {
 			Node n = _data[lev][i];
 			if (!n.hasChildren()) continue; // skip empty nodes
-			auto k = uniqueNodesChecker.find(n);
+            auto k = uniqueNodesChecker.find(n); // find if duplicate
 
 			if (k != uniqueNodesChecker.end()) { // found
 				correspondences[i] = (*k).second;
@@ -458,21 +472,22 @@ void GeomOctree::toDAG(bool iternalCall) {
 		_data[lev].clear();
 		_data[lev].shrink_to_fit();
 		uniqueNodes.shrink_to_fit();
-#if 0		
-		std::copy(uniqueNodes.begin(), uniqueNodes.end(), _data[lev].begin());
-#else
-		_data[lev] = uniqueNodes;
-#endif
+        _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
 		_data[lev].shrink_to_fit();
 		_nNodes += _data[lev].size();
 		
+        // Update all pointers in the level above
 		for (id_t i = 0; i < _data[lev-1].size(); i++) {
 			Node * bn = &_data[lev-1][i];
+            // For all children...
 			for (int j = 0; j < 8; j++) {
-				if (bn->existsChild(j)) bn->children[j] = correspondences[bn->children[j]];
+                // If this child exists...
+                if (bn->existsChild(j)) {
+                    // Set the child pointer to the unique node that replaced this child
+                    bn->children[j] = correspondences[bn->children[j]];
+                }
 			}
 		}
-
 	}
 
 	_stats.toDAGTime = _clock.now() - ts;
