@@ -422,6 +422,181 @@ unsigned int GeomOctree::cleanEmptyNodes() {
 	return nDelPtrs;
 }
 
+
+/**
+ * @brief GeomOctree::toDAG Reduces a SVO to a lossy DAG
+ * @param iternalCall Whether the function is called internally (only adds extra print)
+ */
+void GeomOctree::toLossyDAG(bool iternalCall) {
+
+    if (_state == S_SVO) {
+        if (!iternalCall) printf("* Transforming SVO -> Lossy DAG ... "); fflush(stdout);
+    } else {
+        printf("ERROR! This is not a SVO!\n");
+        return;
+    }
+
+    /**
+     * Main idea:
+     * - Merge nodes that are similar (e.g. only have 1 child difference)
+     * - Most effective to perform on most common nodes
+     *
+     * Implementation ideas
+     * - Represent every child bit as a float, how close it is to the true geometry
+     * -
+     *
+     * Proof of concept, greedy: Merge the largest sets of nodes that have diff 1
+     * - Just per level for now, not earlier levels
+     */
+
+    _nNodes = 1;
+    /** Vector of duplicate nodes. Every index denotes the first duplicate of the node at that index in per level. */
+    std::vector<id_t> correspondences;
+    std::map<Node, id_t> uniqueNodesChecker;
+    std::vector<Node> uniqueNodes;
+    std::vector<sl::uint32_t> uniqueRefCount; // count for each uniqueNode how many refs it has
+
+    std::vector<Node> lossyUniqueNodes;
+    std::map<Node, id_t> uniqueCorrIndices;
+
+    sl::time_point ts = _clock.now();
+
+    printf("\n");
+
+    // For every level, starting at the leaves...
+    for (unsigned int lev = _levels - 1; lev > 0; --lev) {
+        // Clear the lists used to keep track of correspondeces etc
+        size_t oldLevSize = _data[lev].size();
+        uniqueNodes.clear();
+        uniqueNodes.shrink_to_fit();
+        uniqueNodesChecker.clear();
+        correspondences.clear();
+        correspondences.resize(oldLevSize);
+
+        uniqueRefCount.clear();
+        uniqueRefCount.shrink_to_fit();
+        lossyUniqueNodes.clear();
+        lossyUniqueNodes.shrink_to_fit();
+        uniqueCorrIndices.clear();
+
+        // For all nodes in this level...
+        for (id_t i = 0; i < _data[lev].size(); i++) {
+            Node n = _data[lev][i];
+            if (!n.hasChildren()) continue; // skip empty nodes
+            auto k = uniqueNodesChecker.find(n); // find if duplicate
+
+            if (k != uniqueNodesChecker.end()) { // found
+                correspondences[i] = (*k).second; // store duplicate node
+                uniqueRefCount[(*k).second] += 1;
+            }
+            else { // !found
+                uniqueCorrIndices[n] = uniqueNodes.size();
+                uniqueNodesChecker[n] = (id_t)uniqueNodes.size(); // store it as unique node
+                correspondences[i] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
+                uniqueNodes.push_back(n);
+                uniqueRefCount.push_back(1);
+            }
+        }
+
+        uniqueNodes.shrink_to_fit();
+        printf("Reduced level %u \tfrom %lu  \tto %lu nodes ", lev, _data[lev].size(), uniqueNodes.size());
+
+        // ===== LOSSY COMPRESSION =====
+
+        // === Sort unique nodes on #references ===
+        // https://stackoverflow.com/questions/26569801/sort-one-array-based-on-values-of-another-array
+        std::vector<std::pair<Node, sl::uint32_t>> order(uniqueNodes.size());
+        for (int i=0; i<uniqueNodes.size(); ++i){
+            order[i] = std::make_pair(uniqueNodes[i], uniqueRefCount[i]);
+        }
+        struct ordering {
+            bool operator ()(std::pair<Node, sl::uint32_t> const& a,
+                             std::pair<Node, sl::uint32_t> const& b) {
+                return a.second < b.second;
+            }
+        };
+        std::sort(order.begin(), order.end(), ordering());
+
+        // === Check diff between each, merge those with diff 1 ===
+        // Keep track of nodes that are merged
+        uniqueNodesChecker.clear();
+        correspondences.clear();
+        correspondences.resize(uniqueNodes.size());
+
+        // For every unique node, starting with the most referenced one...
+        for (int i = 0; i < order.size(); ++i) {
+            // If node i already merged, skip
+            if (uniqueNodesChecker.find(order[i].first) != uniqueNodesChecker.end()) {
+                continue;
+            }
+
+            // Compare it with every other node...
+            for (int j = i + 1; j < order.size(); ++j) {
+                // If node j already merged, skip
+                if (uniqueNodesChecker.find(order[j].first) == uniqueNodesChecker.end()) {
+                    continue;
+                }
+
+                // Compute the diff...
+                int diff = 0;
+                for (int c = 0; c < 8; ++c) {
+                    if (order[i].first.children[c] != order[j].first.children[c]) {
+                        diff++;
+                    }
+                }
+                // If diff is 1, merge!
+                if (diff == 1) {
+                    auto corIdx = uniqueCorrIndices.find(order[j].first)->second;
+                    correspondences[corIdx] = lossyUniqueNodes.size();
+
+                    uniqueNodesChecker[order[j].first] = 0; // mark it as merged
+
+                    printf("Merged!\n");
+                }
+            }
+            // Add as lossy unique node
+            uniqueNodesChecker[order[i].first] = 0; // mark it as merged
+            auto n = order[i].first;
+            auto corIdx = uniqueCorrIndices.find(order[i].first)->second;
+            correspondences[corIdx] = (id_t)lossyUniqueNodes.size(); // the correspondence is this node itself
+            lossyUniqueNodes.push_back(n);
+        }
+
+        lossyUniqueNodes.shrink_to_fit();
+        printf("\t-> Lossy %lu \t(%.2f\%)\n", lossyUniqueNodes.size(), lossyUniqueNodes.size() / float(uniqueNodes.size()) * 100);
+
+
+        _data[lev].clear();
+        _data[lev].shrink_to_fit();
+
+        _data[lev] = lossyUniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
+
+        _data[lev].shrink_to_fit();
+        _nNodes += _data[lev].size();
+
+        // Update all pointers in the level above
+        for (id_t i = 0; i < _data[lev-1].size(); i++) {
+            Node * bn = &_data[lev-1][i];
+            // For all children...
+            for (int j = 0; j < 8; j++) {
+                // If this child exists...
+                if (bn->existsChild(j)) {
+                    // Set the child pointer to the unique node that replaced this child
+                    bn->children[j] = correspondences[bn->children[j]];
+                }
+            }
+        }
+    }
+
+    _stats.toDAGTime = _clock.now() - ts;
+
+    _state = S_DAG;
+    _stats.nNodesDAG = _nNodes;
+
+    if (!iternalCall) printf("OK! [%s]\n", sl::human_readable_duration(_stats.toDAGTime).c_str());
+}
+
+
 /**
  * @brief GeomOctree::toDAG Reduces an SVO to a DAG
  * @param iternalCall Whether the function is called internally (only adds extra print)
@@ -443,6 +618,8 @@ void GeomOctree::toDAG(bool iternalCall) {
 
 	 sl::time_point ts = _clock.now();
 
+     printf("\n");
+
     // For every level, starting at the leaves...
 	for (unsigned int lev = _levels - 1; lev > 0; --lev) {
         // Clear the lists used to keep track of correspondeces etc
@@ -460,14 +637,16 @@ void GeomOctree::toDAG(bool iternalCall) {
             auto k = uniqueNodesChecker.find(n); // find if duplicate
 
 			if (k != uniqueNodesChecker.end()) { // found
-				correspondences[i] = (*k).second;
+                correspondences[i] = (*k).second; // store duplicate node
 			}
 			else { // !found
-				uniqueNodesChecker[n] = (id_t)uniqueNodes.size();
-				correspondences[i] = (id_t)uniqueNodes.size();
+                uniqueNodesChecker[n] = (id_t)uniqueNodes.size(); // store it as unique node
+                correspondences[i] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
 				uniqueNodes.push_back(n);
 			}
 		}
+
+        printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
 
 		_data[lev].clear();
 		_data[lev].shrink_to_fit();

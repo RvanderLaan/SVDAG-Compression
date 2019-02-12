@@ -102,7 +102,7 @@ int main(int argc, char ** argv) {
             octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
         }
         svo.encode(octree);
-		octree.toDAG();
+        octree.toLossyDAG();
 	}
 	else {
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
