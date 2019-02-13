@@ -90,6 +90,9 @@ int main(int argc, char ** argv) {
 		exit(1);
 	}
 
+
+    bool lossy = true;
+
 	GeomOctree octree(&scene);
 
 	sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
@@ -102,7 +105,11 @@ int main(int argc, char ** argv) {
             octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
         }
         svo.encode(octree);
-        octree.toLossyDAG();
+        if (lossy) {
+            octree.toLossyDAG();
+        } else {
+            octree.toDAG();
+        }
 	}
 	else {
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
@@ -119,7 +126,7 @@ int main(int argc, char ** argv) {
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
 
-	octree.toSDAG();
+    if (!lossy) octree.toSDAG();
 
 	EncodedUSSVDAG ussvdag;
 	ussvdag.encode(octree);

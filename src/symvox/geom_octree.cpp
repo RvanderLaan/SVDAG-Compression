@@ -447,6 +447,11 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
      *
      * Proof of concept, greedy: Merge the largest sets of nodes that have diff 1
      * - Just per level for now, not earlier levels
+     *
+     * Looking at #nodes compressed per level w/ lossless compression, lossy compression should be avoided on:
+     * - the leaves, there are very little benefits with large visual side effects
+     * - the first half of levels, since this will have the largest side effects
+     * -> therefore, focus on the deepest levels above the leaves
      */
 
     _nNodes = 1;
@@ -501,75 +506,81 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
         uniqueNodes.shrink_to_fit();
         printf("Reduced level %u \tfrom %lu  \tto %lu nodes ", lev, _data[lev].size(), uniqueNodes.size());
 
-        // ===== LOSSY COMPRESSION =====
-
-        // === Sort unique nodes on #references ===
-        // https://stackoverflow.com/questions/26569801/sort-one-array-based-on-values-of-another-array
-        std::vector<std::pair<Node, sl::uint32_t>> order(uniqueNodes.size());
-        for (int i=0; i<uniqueNodes.size(); ++i){
-            order[i] = std::make_pair(uniqueNodes[i], uniqueRefCount[i]);
-        }
-        struct ordering {
-            bool operator ()(std::pair<Node, sl::uint32_t> const& a,
-                             std::pair<Node, sl::uint32_t> const& b) {
-                return a.second < b.second;
-            }
-        };
-        std::sort(order.begin(), order.end(), ordering());
-
-        // === Check diff between each, merge those with diff 1 ===
-        // Keep track of nodes that are merged
-        uniqueNodesChecker.clear();
-        correspondences.clear();
-        correspondences.resize(uniqueNodes.size());
-
-        // For every unique node, starting with the most referenced one...
-        for (int i = 0; i < order.size(); ++i) {
-            // If node i already merged, skip
-            if (uniqueNodesChecker.find(order[i].first) != uniqueNodesChecker.end()) {
-                continue;
-            }
-
-            // Compare it with every other node...
-            for (int j = i + 1; j < order.size(); ++j) {
-                // If node j already merged, skip
-                if (uniqueNodesChecker.find(order[j].first) == uniqueNodesChecker.end()) {
-                    continue;
-                }
-
-                // Compute the diff...
-                int diff = 0;
-                for (int c = 0; c < 8; ++c) {
-                    if (order[i].first.children[c] != order[j].first.children[c]) {
-                        diff++;
-                    }
-                }
-                // If diff is 1, merge!
-                if (diff == 1) {
-                    auto corIdx = uniqueCorrIndices.find(order[j].first)->second;
-                    correspondences[corIdx] = lossyUniqueNodes.size();
-
-                    uniqueNodesChecker[order[j].first] = 0; // mark it as merged
-
-                    printf("Merged!\n");
-                }
-            }
-            // Add as lossy unique node
-            uniqueNodesChecker[order[i].first] = 0; // mark it as merged
-            auto n = order[i].first;
-            auto corIdx = uniqueCorrIndices.find(order[i].first)->second;
-            correspondences[corIdx] = (id_t)lossyUniqueNodes.size(); // the correspondence is this node itself
-            lossyUniqueNodes.push_back(n);
-        }
-
-        lossyUniqueNodes.shrink_to_fit();
-        printf("\t-> Lossy %lu \t(%.2f\%)\n", lossyUniqueNodes.size(), lossyUniqueNodes.size() / float(uniqueNodes.size()) * 100);
-
-
+        // Clear original SVO nodes
         _data[lev].clear();
         _data[lev].shrink_to_fit();
 
-        _data[lev] = lossyUniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
+        // ===== LOSSY COMPRESSION =====
+        bool doLossy = lev < (_levels -1) && lev > _levels / 2; // only lossy on deepest 1/2 levels, except leaves
+
+        if (doLossy) {
+            // === Sort unique nodes on #references ===
+            // https://stackoverflow.com/questions/26569801/sort-one-array-based-on-values-of-another-array
+            std::vector<std::pair<Node, sl::uint32_t>> order(uniqueNodes.size());
+            for (int i=0; i<uniqueNodes.size(); ++i){
+                order[i] = std::make_pair(uniqueNodes[i], uniqueRefCount[i]);
+            }
+            struct ordering {
+                bool operator ()(std::pair<Node, sl::uint32_t> const& a,
+                                 std::pair<Node, sl::uint32_t> const& b) {
+                    return a.second < b.second;
+                }
+            };
+            std::sort(order.begin(), order.end(), ordering());
+
+            // === Check diff between each, merge those with diff 1 ===
+            // Keep track of nodes that are merged
+            uniqueNodesChecker.clear();
+            correspondences.clear();
+            correspondences.resize(uniqueNodes.size());
+
+            // For every unique node, starting with the most referenced one...
+            for (int i = 0; i < order.size(); ++i) {
+
+                // If node i already merged, skip
+                if (uniqueNodesChecker.find(order[i].first) != uniqueNodesChecker.end()) {
+                    continue;
+                }
+
+                // Compare it with every other node...
+                for (int j = i + 1; j < order.size(); ++j) {
+                    // If node j already merged, skip
+                    if (uniqueNodesChecker.find(order[j].first) != uniqueNodesChecker.end()) {
+                        continue;
+                    }
+
+                    // Compute the diff...
+                    int diff = 0;
+                    for (int c = 0; c < 8; ++c) {
+                        if (order[i].first.children[c] != order[j].first.children[c]) {
+                            diff++;
+                        }
+                    }
+                    // If diff is 1, merge!
+                    if (diff <= 1) {
+                        auto corIdx = uniqueCorrIndices.find(order[j].first)->second;
+                        correspondences[corIdx] = (id_t)lossyUniqueNodes.size();
+
+                        uniqueNodesChecker[order[j].first] = 0; // mark it as merged
+
+    //                    printf("Merged!\n");
+                    }
+                }
+                // Add as lossy unique node
+                uniqueNodesChecker[order[i].first] = 0; // mark it as merged
+                auto n = order[i].first;
+                auto corIdx = uniqueCorrIndices.find(order[i].first)->second;
+                correspondences[corIdx] = (id_t)lossyUniqueNodes.size(); // the correspondence is this node itself
+                lossyUniqueNodes.push_back(n);
+            }
+
+            lossyUniqueNodes.shrink_to_fit();
+            printf("\t-> Lossy %lu \t(%.2f\%)\n", lossyUniqueNodes.size(), (lossyUniqueNodes.size() / float(uniqueNodes.size())) * 100.0);
+            _data[lev] = lossyUniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
+        } else {
+            _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
+            printf("\t-> No lossy compression\n");
+        }
 
         _data[lev].shrink_to_fit();
         _nNodes += _data[lev].size();
