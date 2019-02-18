@@ -1,2 +1,0 @@
-/usr/bin/ar qc libsymvox.a  CMakeFiles/symvox.dir/src/symvox/encoded_svo.cpp.o CMakeFiles/symvox.dir/src/symvox/encoded_svdag.cpp.o CMakeFiles/symvox.dir/src/symvox/encoded_ussvdag.cpp.o CMakeFiles/symvox.dir/src/symvox/encoded_ssvdag.cpp.o CMakeFiles/symvox.dir/src/symvox/scene.cpp.o CMakeFiles/symvox.dir/src/symvox/test_triangle_box.cpp.o CMakeFiles/symvox.dir/src/symvox/octree.cpp.o CMakeFiles/symvox.dir/src/symvox/geom_octree.cpp.o CMakeFiles/symvox.dir/src/symvox/octree_node.cpp.o
-/usr/bin/ranlib libsymvox.a

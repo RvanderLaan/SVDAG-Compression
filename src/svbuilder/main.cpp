@@ -91,7 +91,7 @@ int main(int argc, char ** argv) {
 	}
 
 
-    bool lossy = true;
+    bool lossy = false;
 
 	GeomOctree octree(&scene);
 
@@ -173,6 +173,9 @@ int main(int argc, char ** argv) {
 	printf("SVDAG->SSVDAG time : %s\n", sl::human_readable_duration(stats.toSDAGTime).c_str());
 	printf("Total time         : %s\n", sl::human_readable_duration(totalTime).c_str());
 	printf("===================================================================\n\n");
-	
+
+
+    octree.findAllDuplicateSubtrees();
+
 	return 0;
 }

@@ -511,7 +511,7 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
         _data[lev].shrink_to_fit();
 
         // ===== LOSSY COMPRESSION =====
-        bool doLossy = lev < (_levels -1) && lev > _levels / 2; // only lossy on deepest 1/2 levels, except leaves
+        bool doLossy = lev == (_levels -1); // && lev > _levels / 2; // only lossy on deepest 1/2 levels, except leaves
 
         if (doLossy) {
             // === Sort unique nodes on #references ===
@@ -605,6 +605,102 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
     _stats.nNodesDAG = _nNodes;
 
     if (!iternalCall) printf("OK! [%s]\n", sl::human_readable_duration(_stats.toDAGTime).c_str());
+}
+
+/** Recursive subtree comparison **/
+bool GeomOctree::compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB) {
+//    printf("%u, %u\n", levA, levB);
+
+    if (!nA.hasChildren() || !nB.hasChildren()) {
+        return nA.childrenBitmask == nB.childrenBitmask;
+    }
+
+    unsigned int childLevA = levA + 1;
+    unsigned int childLevB = levB + 1;
+
+    if (childLevB >= _levels || childLevA >= _levels) {
+        return true;
+    }
+
+    for (unsigned int i = 0; i < 8; ++i) {
+        // If they child bits don't match, they are not equal
+        if (nA.existsChild(i) != nB.existsChild(i)) {
+            return false;
+        }
+        // Otherwise they are equal.
+        // If either one is not set, we cannot compare them further. Therefore they can be seen as equal
+        else if (!(nA.existsChild(i) || nB.existsChild(i))) {
+            continue;
+        }
+
+        Node &cA = _data[childLevA][nA.children[i]];
+        Node &cB = _data[childLevB][nB.children[i]];
+
+        // Compare their child masks...
+        if (cA.childrenBitmask != cB.childrenBitmask) {
+            return false;
+        } else {
+            // If both nodes have children...
+            if (cA.hasChildren() && cB.hasChildren()) {
+
+                // Then compare the subtrees of these children
+                if (!this->compareSubtrees(childLevA, childLevB, cA, cB)) {
+                    return false;
+                }
+            }
+            // If only 1 node has children, they can be seen as equal. One has more detail than the other
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief findAllDuplicateSubtrees Brute force search over all levels, looking for equal subtrees
+ * Goal: Research to see what the benefit of multi-level merging would be.
+ * Just for SVDAGs now, but SSVDAGs would likely perform better - harder to check though
+ */
+unsigned int GeomOctree::findAllDuplicateSubtrees() {
+
+    // Note: Comparing ALL combinations of subtree pairs is not what we want
+    // If a subtree high-up is equal to another subtree, all of its subtrees will equal it as well
+
+    // Solution(?): Keep track of children that are NOT equal to another subtree
+    // Only compare those instead of all nodes in the next level
+    std::vector<id_t> nodesToCheck;
+
+    unsigned int numEqualSubtrees = 0;
+    unsigned int numTotalSubtrees = 0;
+
+    for (unsigned int levA = 0; levA < _levels; ++levA) {
+        printf("Comparing level %u\n", levA);
+        // For all nodes in this level...
+        for (id_t i = 0; i < _data[levA].size(); i++) {
+            Node nA = _data[levA][i];
+            for (unsigned int levB = levA + 1; levB < _levels; ++levB) {
+                // For all nodes in the other level...
+                for (id_t j = 0; j < _data[levB].size(); j++) {
+                    numTotalSubtrees++;
+
+                    Node nB = _data[levB][j];
+
+                    bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB);
+
+                    // Todo: Brute force check equality of subtrees of nA and nB
+                    if (areSubtreesEqual) {
+                        numEqualSubtrees++;
+                        // Break outer loop, no need to check anymore for nA
+                        levB = _levels;
+                        break;
+                    }
+                }
+            }
+            // No equal subtree found if this is reached
+            // Now check if any of its sub-subtrees are equal to something else
+//            nodesToCheck.push_back()
+        }
+    }
+
+    printf("Equal / total subtrees: %u / %u\n", numEqualSubtrees, numTotalSubtrees);
 }
 
 

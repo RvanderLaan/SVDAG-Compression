@@ -1,1 +1,0 @@
-/usr/bin/c++   -fPIC -std=c++0x -fopenmp -O3 -DNDEBUG  -rdynamic CMakeFiles/svbuilder.dir/src/svbuilder/main.cpp.o  -o ../bin/svbuilder libsymvox.a /usr/local/lib/libsl.a 

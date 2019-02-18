@@ -61,7 +61,7 @@ public:  //////// Octree Node
 		inline bool hasChildren() const { return (childrenBitmask != 0); }
 		inline unsigned int getNChildren() const { return (childrenBitmask * 01001001001ULL & 042104210421ULL) % 017; }
 
-		inline void setChildBit(int childId) { childrenBitmask |= (1U << childId); }
+        inline void setChildBit(int childId) { childrenBitmask |= (1U << childId); }
 		inline void unsetChildBit(int childId) { childrenBitmask &= ~(1U << childId); }
 
 		virtual void print() const = 0;

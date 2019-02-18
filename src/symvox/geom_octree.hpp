@@ -106,6 +106,8 @@ public:
     void buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL);
     void toDAG(bool internalCall = false);
     void toLossyDAG(bool internalCall = false);
+    unsigned int findAllDuplicateSubtrees();
+    bool compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB);
 	void toSDAG(bool internalCall = false);
 	void toSDAGCanonical();
 
