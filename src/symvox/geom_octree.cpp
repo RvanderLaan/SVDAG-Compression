@@ -611,18 +611,23 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
 bool GeomOctree::compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB) {
 //    printf("%u, %u\n", levA, levB);
 
-    if (!nA.hasChildren() || !nB.hasChildren()) {
+    // If B terminates before A, they are not equal since one or more levels are lost
+    if (nA.hasChildren() && !nB.hasChildren()) {
+        return false;
+    } else if (!nA.hasChildren() || !nB.hasChildren()) {
+        // If they both don't have children, simply compare their child masks
         return nA.childrenBitmask == nB.childrenBitmask;
     }
 
     unsigned int childLevA = levA + 1;
     unsigned int childLevB = levB + 1;
 
+    // If the end of the graph is reached, they are equal (?)
     if (childLevB >= _levels || childLevA >= _levels) {
         return true;
     }
 
-    for (unsigned int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i) {
         // If they child bits don't match, they are not equal
         if (nA.existsChild(i) != nB.existsChild(i)) {
             return false;
@@ -666,41 +671,87 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
 
     // Solution(?): Keep track of children that are NOT equal to another subtree
     // Only compare those instead of all nodes in the next level
-    std::vector<id_t> nodesToCheck;
+    std::vector<Node> currentNodesToCheck;
+    std::vector<Node> nextNodesToCheck;
+
+    // Initialize all nodes of the highest level for comparison to subtrees at other levels
+    unsigned int levA = 1;
+    for (id_t i = 0; i < _data[levA].size(); i++) {
+        Node &n = _data[levA][i];
+        currentNodesToCheck.push_back(n);
+    }
 
     unsigned int numEqualSubtrees = 0;
-    unsigned int numTotalSubtrees = 0;
+    unsigned int numTotalComparisons = 0;
 
-    for (unsigned int levA = 0; levA < _levels; ++levA) {
+    // Most efficient methinks:
+    // Start at level 1 (A), compare to all nodes at levels above it (B), repeat for following levels
+    // This way, the matches are found as early as possible
+
+    // For every node to check...
+        // Check for any level if there is an equal subtree
+        // Note: If node B terminates before node A, they are NOT equal. The other way around is fine
+        // For nodes that are not equal, add their children in the next level to the nextNodesToCheck list!
+
+    std::vector<int> nodesEqualPerLevel(_levels, 0);
+
+    for (; levA < _levels; ++levA) {
         printf("Comparing level %u\n", levA);
-        // For all nodes in this level...
-        for (id_t i = 0; i < _data[levA].size(); i++) {
-            Node nA = _data[levA][i];
-            for (unsigned int levB = levA + 1; levB < _levels; ++levB) {
-                // For all nodes in the other level...
+        // For all nodes to be checked...
+        for (auto& nA : currentNodesToCheck) {
+            bool foundMatch = false;
+            for (unsigned int levB = 0; levB < levA; ++levB) {
+                // For all nodes in the other level above A...
                 for (id_t j = 0; j < _data[levB].size(); j++) {
-                    numTotalSubtrees++;
+                    numTotalComparisons++;
 
-                    Node nB = _data[levB][j];
+                    Node &nB = _data[levB][j];
 
+                    // Brute force check equality of subtrees of nA and nB
                     bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB);
 
-                    // Todo: Brute force check equality of subtrees of nA and nB
                     if (areSubtreesEqual) {
+                        foundMatch = true;
                         numEqualSubtrees++;
-                        // Break outer loop, no need to check anymore for nA
-                        levB = _levels;
+                        nodesEqualPerLevel[levA]++;
                         break;
                     }
                 }
+                if (foundMatch) {
+                    // If a match is found, we are done for this subtree
+                    // It is equal to a subtree higher up in the graph!
+                    break;
+                }
             }
-            // No equal subtree found if this is reached
-            // Now check if any of its sub-subtrees are equal to something else
-//            nodesToCheck.push_back()
+            if (!foundMatch) {
+                // If no match was found, try later for all child nodes
+                for (int i = 0; i < 8; ++i) {
+                    if (nA.existsChild(i)) {
+                        nextNodesToCheck.push_back(_data[levA + 1][nA.children[i]]);
+                    }
+                }
+            }
         }
+
+        // Since children of a node may also be children of other nodes in a DAG,
+        // we need to ensure children are only present once to the nextNodesToCheck vector
+        std::sort(nextNodesToCheck.begin(), nextNodesToCheck.end() );
+        nextNodesToCheck.erase(std::unique(nextNodesToCheck.begin(), nextNodesToCheck.end() ), nextNodesToCheck.end());
+
+        // After all nodes for this level have been checked, swap the current and next nodes to check
+        currentNodesToCheck.clear();
+        currentNodesToCheck.swap(nextNodesToCheck);
     }
 
-    printf("Equal / total subtrees: %u / %u\n", numEqualSubtrees, numTotalSubtrees);
+    printf("Nodes equal to another one: %u. Total #nodes %zu. Total #comparisons: %u\n", numEqualSubtrees, _nNodes, numTotalComparisons);
+
+    for (unsigned int i = 0; i < _levels; ++i) {
+        double pct = 100 * (nodesEqualPerLevel[i] / double(_data[i].size()));
+        printf("- Level %u:   \t%i / %zu (%.2f%%) subtrees are equal to a subtree higher up\n", i, nodesEqualPerLevel[i], _data[i].size(), pct);
+    }
+    printf("Total equal: %u / %zu (%.2f%%)\n", numEqualSubtrees, _nNodes, (100 * numEqualSubtrees / double(_nNodes)));
+
+    return numEqualSubtrees;
 }
 
 

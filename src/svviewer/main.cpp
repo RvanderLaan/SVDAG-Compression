@@ -206,6 +206,9 @@ int main(int argc, char ** argv)
 		return 1;
 	}
 
+//    encoded_octree->getRootTravNode()
+//    return 0;
+
 	renderer = new OctreeDDARenderer(encoded_octree);
 	renderer->setScreenResolution(SCREEN_WIDTH, SCREEN_HEIGHT);
 

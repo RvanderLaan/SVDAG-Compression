@@ -1,3 +1,7 @@
+This repo is used for experimenting with SVDAG compression techniques for my MSc thesis.
+The source code of Symmetry-aware Sparse Voxel DAGs is used as a foundation.
+
+Original readme:
 
 ====================================================
 	SymVox v0.1 (Symmetry Voxelator) Software
