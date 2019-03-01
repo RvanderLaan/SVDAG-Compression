@@ -659,6 +659,60 @@ bool GeomOctree::compareSubtrees(unsigned int levA, unsigned int levB, Node &nA,
     return true;
 }
 
+/** Checks whether two subtrees at different levels are equal under a specific symmetry similarity */
+bool GeomOctree::compareSymSubtrees(unsigned int levA, unsigned int levB, Node &nA_in, Node &nB, bool sX, bool sY, bool sZ) {
+    // Mirror node A
+    Node nA = nA_in.mirror(sX, sY, sZ);
+    invertInvs(nA, levA, sX, sY, sZ);
+
+    // Same as normal subtree comparison
+    if (nA.hasChildren() && !nB.hasChildren()) {
+        return false;
+    } else if (!nA.hasChildren() || !nB.hasChildren()) {
+        // If they both don't have children, simply compare their child masks
+        return nA.childrenBitmask == nB.childrenBitmask;
+    }
+
+    unsigned int childLevA = levA + 1;
+    unsigned int childLevB = levB + 1;
+
+    // If the end of the graph is reached, they are equal (?)
+    if (childLevB >= _levels || childLevA >= _levels) {
+        return true;
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        // If they child bits don't match, they are not equal
+        if (nA.existsChild(i) != nB.existsChild(i)) {
+            return false;
+        }
+        // Otherwise they are equal.
+        // If either one is not set, we cannot compare them further. Therefore they can be seen as equal
+        else if (!(nA.existsChild(i) || nB.existsChild(i))) {
+            continue;
+        }
+
+        Node &cA = _data[childLevA][nA.children[i]];
+        Node &cB = _data[childLevB][nB.children[i]];
+
+        // Compare their child masks...
+        if (cA.childrenBitmask != cB.childrenBitmask) {
+            return false;
+        } else {
+            // If both nodes have children...
+            if (cA.hasChildren() && cB.hasChildren()) {
+
+                // Then compare the subtrees of these children
+                if (!this->compareSymSubtrees(childLevA, childLevB, cA, cB, sX, sY, sZ)) {
+                    return false;
+                }
+            }
+            // If only 1 node has children, they can be seen as equal. One has more detail than the other
+        }
+    }
+    return true;
+}
+
 /**
  * @brief findAllDuplicateSubtrees Brute force search over all levels, looking for equal subtrees
  * Goal: Research to see what the benefit of multi-level merging would be.
@@ -711,6 +765,121 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
                     bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB);
 
                     if (areSubtreesEqual) {
+                        foundMatch = true;
+                        numEqualSubtrees++;
+                        nodesEqualPerLevel[levA]++;
+                        break;
+                    }
+                }
+                if (foundMatch) {
+                    // If a match is found, we are done for this subtree
+                    // It is equal to a subtree higher up in the graph!
+                    break;
+                }
+            }
+            if (!foundMatch) {
+                // If no match was found, try later for all child nodes
+                for (int i = 0; i < 8; ++i) {
+                    if (nA.existsChild(i)) {
+                        nextNodesToCheck.push_back(_data[levA + 1][nA.children[i]]);
+                    }
+                }
+            }
+        }
+
+        // Since children of a node may also be children of other nodes in a DAG,
+        // we need to ensure children are only present once to the nextNodesToCheck vector
+        std::sort(nextNodesToCheck.begin(), nextNodesToCheck.end() );
+        nextNodesToCheck.erase(std::unique(nextNodesToCheck.begin(), nextNodesToCheck.end() ), nextNodesToCheck.end());
+
+        // After all nodes for this level have been checked, swap the current and next nodes to check
+        currentNodesToCheck.clear();
+        currentNodesToCheck.swap(nextNodesToCheck);
+    }
+
+    printf("Nodes equal to another one: %u. Total #nodes %zu. Total #comparisons: %u\n", numEqualSubtrees, _nNodes, numTotalComparisons);
+
+    for (unsigned int i = 0; i < _levels; ++i) {
+        double pct = 100 * (nodesEqualPerLevel[i] / double(_data[i].size()));
+        printf("- Level %u:   \t%i / %zu (%.2f%%) subtrees are equal to a subtree higher up\n", i, nodesEqualPerLevel[i], _data[i].size(), pct);
+    }
+    printf("Total equal: %u / %zu (%.2f%%)\n", numEqualSubtrees, _nNodes, (100 * numEqualSubtrees / double(_nNodes)));
+
+    return numEqualSubtrees;
+}
+
+/**
+ * @brief GeomOctree::findAllSymDuplicateSubtrees Same as findAllDuplicateSubtrees, but with
+ * symmetry as well: Find symmetricaly identical subtrees over all levels
+ * @return
+ */
+unsigned int GeomOctree::findAllSymDuplicateSubtrees() {
+
+    struct MirroredNode{
+        MirroredNode() : mirrorX(false), mirrorY(false), mirrorZ(false), id(0) {}
+        MirroredNode(bool mX, bool mY, bool mZ, id_t id) :
+            mirrorX(mX), mirrorY(mY), mirrorZ(mZ), id(id) {}
+        bool mirrorX, mirrorY, mirrorZ;
+        id_t id;
+    };
+
+    // Note: Comparing ALL combinations of subtree pairs is not what we want
+    // If a subtree high-up is equal to another subtree, all of its subtrees will equal it as well
+
+    // Solution(?): Keep track of children that are NOT equal to another subtree
+    // Only compare those instead of all nodes in the next level
+    std::vector<Node> currentNodesToCheck;
+    std::vector<Node> nextNodesToCheck;
+
+    // Initialize all nodes of the highest level for comparison to subtrees at other levels
+    unsigned int levA = 1;
+    for (id_t i = 0; i < _data[levA].size(); i++) {
+        Node &n = _data[levA][i];
+        currentNodesToCheck.push_back(n);
+    }
+
+    unsigned int numEqualSubtrees = 0;
+    unsigned int numTotalComparisons = 0;
+
+    // Most efficient methinks:
+    // Start at level 1 (A), compare to all nodes at levels above it (B), repeat for following levels
+    // This way, the matches are found as early as possible
+
+    // For every node to check...
+        // Check for any level if there is an equal subtree
+        // Note: If node B terminates before node A, they are NOT equal. The other way around is fine
+        // For nodes that are not equal, add their children in the next level to the nextNodesToCheck list!
+
+    std::vector<int> nodesEqualPerLevel(_levels, 0);
+
+    for (; levA < _levels; ++levA) {
+        printf("Comparing level %u\n", levA);
+        // For all nodes to be checked...
+        for (auto& nA : currentNodesToCheck) {
+
+            bool foundMatch = false;
+            for (unsigned int levB = 0; levB < levA; ++levB) {
+                // For all nodes in the other level above A...
+                for (id_t j = 0; j < _data[levB].size(); j++) {
+                    numTotalComparisons++;
+
+                    Node &nB = _data[levB][j];
+
+                    // TODO: Compare all mirrored nodes of subtree nA to original nodes of subtree nB
+                    // * Compute mirrored subtrees of nA
+                    // * Compare each of them as before with nB
+                    // * Repeat!
+
+                    // Brute force check equality of subtrees of nA and nB
+                    if (compareSubtrees(levA, levB, nA, nB)
+                        || compareSymSubtrees(levA, levB, nA, nB, true, false, false)
+                        || compareSymSubtrees(levA, levB, nA, nB, false, true, false)
+                        || compareSymSubtrees(levA, levB, nA, nB, false, false, true)
+                        || compareSymSubtrees(levA, levB, nA, nB, true, true, false)
+                        || compareSymSubtrees(levA, levB, nA, nB, true, false, true)
+                        || compareSymSubtrees(levA, levB, nA, nB, false, true, true)
+                        || compareSymSubtrees(levA, levB, nA, nB, true, true, true)
+                    ) {
                         foundMatch = true;
                         numEqualSubtrees++;
                         nodesEqualPerLevel[levA]++;
@@ -867,31 +1036,36 @@ void GeomOctree::toSDAG(bool internalCall) {
 
 	if (!internalCall) _clock.restart();
 
+    // For every level, starting at the leaves...
 	for (unsigned int lev = _levels - 1; lev > 0; lev--) {
+        // Clear the lists used to keep track of correspondeces etc
 		unsigned int oldLevSize = (unsigned int)_data[lev].size();
 		uniqueNodes.clear();
 		uniqueNodesChecker.clear();
 		correspondences.resize(oldLevSize);
 
+        // For each node in this level...
 		for (id_t i = 0; i < _data[lev].size(); i++) {
 
 			Node n = _data[lev][i];
 			if (!n.hasChildren()) continue; // skip empty nodes
 
-			// Check invariances
-			if (n == n.mirror(true, false, false)) n.setInvariantBit(0);
-			if (n == n.mirror(false, true, false)) n.setInvariantBit(1);
-			if (n == n.mirror(false, false, true)) n.setInvariantBit(2);
+            // Create mirrored versions of this node
+            Node niX = n.mirror(true, false, false);
+            Node niY = n.mirror(false, true, false);
+            Node niZ = n.mirror(false, false, true);
+            Node niXY = niX.mirror(false, true, false);
+            Node niXZ = niX.mirror(false, false, true);
+            Node niYZ = niY.mirror(false, false, true);
+            Node niXYZ = niXY.mirror(false, false, true);
 
-			Node niX = n.mirror(true, false, false);
-			Node niY = n.mirror(false, true, false);
-			Node niZ = n.mirror(false, false, true);
-			Node niXY = niX.mirror(false, true, false);
-			Node niXZ = niX.mirror(false, false, true);
-			Node niYZ = niY.mirror(false, false, true);
-			Node niXYZ = niXY.mirror(false, false, true);
+			// Check invariances
+            if (n == niX) n.setInvariantBit(0);
+            if (n == niY) n.setInvariantBit(1);
+            if (n == niZ) n.setInvariantBit(2);
 
 			// Check children invariances
+            // If a child is invariant on an axis, this removes the mirror bit there
 			if (lev < (_levels - 1)) {
 				invertInvs(niX, lev, true, false, false);
 				invertInvs(niY, lev, false, true, false);
@@ -902,6 +1076,7 @@ void GeomOctree::toSDAG(bool internalCall) {
 				invertInvs(niXYZ, lev, true, true, true);
 			}
 
+            // Find a correspondence of this node or any of its mirrored copies
 			std::map<GeomOctree::Node, sl::uint32_t>::iterator it;
 			if ((it = uniqueNodesChecker.find(n)) != uniqueNodesChecker.end()) {
 				correspondences[i] = MirroredNode(false, false, false, (*it).second);
@@ -927,21 +1102,24 @@ void GeomOctree::toSDAG(bool internalCall) {
 			else if ((it = uniqueNodesChecker.find(niXYZ)) != uniqueNodesChecker.end()) {
 				correspondences[i] = MirroredNode(true, true, true, (*it).second);
 			}
-			else { // !found
+            else { // no correspondence found, so add as unique node
 				uniqueNodesChecker[n] = (id_t)uniqueNodes.size();
 				correspondences[i] = MirroredNode(false, false, false, id_t(uniqueNodes.size()));
 				uniqueNodes.push_back(n);
 			}
 		}
+        // Replace previous nodes on this level as the reduced set of symmetrically unique nodes
 		_data[lev].clear();
 		_data[lev] = uniqueNodes;
 		_data[lev].shrink_to_fit();
 		_nNodes += _data[lev].size();
 
+        // Update all pointers in the level above
 		for (id_t i = 0; i < _data[lev - 1].size(); i++) {
 			Node &n = _data[lev - 1][i];
 			for (id_t j = 0; j < 8; j++) {
 				if (n.existsChildPointer(j)) {
+                    // Set the child pointer to the unique node that replaced this child
 					MirroredNode mn = correspondences[n.children[j]];
 					n.children[j] = mn.id;
 					if (mn.mirrorX) n.setChildMirrrorBit(0, j);
@@ -1084,6 +1262,14 @@ bool GeomOctree::checkIntegrity() {
 	return true;
 }
 
+/**
+ * @brief GeomOctree::invertInvs Unsets mirror bits for axis' that are invariant for child nodes
+ * @param n
+ * @param lev
+ * @param inX
+ * @param inY
+ * @param inZ
+ */
 void GeomOctree::invertInvs(Node &n, int lev, bool inX, bool inY, bool inZ) {
 	for (int i = 0; i < 8; ++i) {
 		if (n.existsChildPointer(i)) {

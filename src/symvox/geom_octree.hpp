@@ -107,8 +107,10 @@ public:
     void toDAG(bool internalCall = false);
     void toLossyDAG(bool internalCall = false);
     unsigned int findAllDuplicateSubtrees();
+    unsigned int findAllSymDuplicateSubtrees();
     bool compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB);
-	void toSDAG(bool internalCall = false);
+    bool compareSymSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, bool sX, bool sY, bool sZ);
+    void toSDAG(bool internalCall = false);
 	void toSDAGCanonical();
 
 	// External tools
