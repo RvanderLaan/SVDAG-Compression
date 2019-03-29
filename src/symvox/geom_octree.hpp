@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include <set>
+
 #include <sl/cstdint.hpp>
 #include <sl/axis_aligned_box.hpp>
 #include <sl/clock.hpp>
@@ -59,7 +61,12 @@ public:  //////// Octree Node
 		sl::uint8_t invariantBitmask;
 
 		// Constructor
-		Node();
+        /**
+         * @brief Node
+         * @param level The level in which this Node is (initially) located. Used to initialize the level of this node's children.
+         */
+        Node();
+        using Octree::Node::Node;
 
 		// Operators
 		virtual bool operator==(const Node& other) const;
@@ -108,8 +115,9 @@ public:
     void toLossyDAG(bool internalCall = false);
     unsigned int findAllDuplicateSubtrees();
     unsigned int findAllSymDuplicateSubtrees();
-    bool compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB);
+    bool compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, std::set<Node>& nodesInSubtree);
     bool compareSymSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, bool sX, bool sY, bool sZ);
+    void removeSubtreeAndUpdatePointers(unsigned int levA, unsigned int levB, Node &nA, Node &nB);
     void toSDAG(bool internalCall = false);
 	void toSDAGCanonical();
 

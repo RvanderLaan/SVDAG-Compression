@@ -115,6 +115,7 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 
 	_clock.restart();
 
+    // Asssemble list of absolute pointers in the single node list for nodes in all levels
 	for (unsigned int lev = 0; lev < _levels; ++lev) {
 		for (unsigned int i = 0; i < octData[lev].size(); ++i) {
 			truePtrs.push_back(counter);
@@ -127,6 +128,14 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 
 	unsigned int levSizeAcum = 0;
 
+    // Precompute level sizes to take into account a Node's childLevels attribute for encoding a multi-level encoded SVDAG
+    unsigned int levSizesAcum[_levels];
+    for (unsigned int lev = 0; lev < _levels; ++lev) {
+        unsigned int levSize = (unsigned int)octData[lev].size();
+        levSizeAcum += levSize;
+        levSizesAcum[lev] = levSizeAcum;
+    }
+
 	for (unsigned int lev = 0; lev < _levels; ++lev) {
 		unsigned int levSize = (unsigned int)octData[lev].size();
 		levSizeAcum += levSize;
@@ -138,8 +147,13 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 				counter = 0;
 				for (int k = 7; k >= 0; --k) {
 					if (n.children[k] != GeomOctree::nullNode) {
-						_data.push_back(truePtrs[n.children[k] + levSizeAcum]);
-						//printf("\t%i", dagEncoded[dagEncoded.size() - 1]);
+                        // Multi level merging: Add pointer for potential different the child levels
+                        _data.push_back(truePtrs[levSizesAcum[n.children[k]] + n.childLevels[k]]);
+
+                        // Single level merging
+                        //_data.push_back(truePtrs[n.children[k] + levSizeAcum]);
+
+                        //printf("\t%i", dagEncoded[dagEncoded.size() - 1]);
 						counter++;
 					}
 					//else printf("\t");

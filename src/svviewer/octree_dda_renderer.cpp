@@ -412,6 +412,8 @@ void OctreeDDARenderer::clearVoxel(int position)
 
 	printf("Index: %u, sizeof uint32_t: %u, uint32_t(0): %u \n", nodeIndex, sizeof(sl::uint32_t), sl::uint32_t(0));
 
+    // Instead of replacing with 0,
+    // copy leaf to end of node list, update pointer to it
 	sl::uint32_t subData[] = { sl::uint32_t(0) };
 
 	glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
