@@ -91,7 +91,7 @@ int main(int argc, char ** argv) {
 	}
 
 
-    bool lossy = true;
+    bool lossy = false;
 
 	GeomOctree octree(&scene);
 
@@ -126,7 +126,7 @@ int main(int argc, char ** argv) {
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
 
-//    octree.findAllDuplicateSubtrees();
+    octree.findAllDuplicateSubtrees();
 
     if (!lossy) octree.toSDAG();
 
