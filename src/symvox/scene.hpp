@@ -29,7 +29,7 @@
 class Scene {
 public:
 	typedef struct _Material {
-		char name[256];
+        char name[256];
 		sl::color3f diffuseColor;
 		sl::color3f specColor;
 		sl::color3f ambientColor;
@@ -81,7 +81,7 @@ public:
 	}
 	inline size_t getTriangleMaterialId(std::size_t idTri) {
 		return (idTri < _indexedTris.size()) ? _indexedTris[idTri].material : 0;
-	}
+    }
 
 	void saveBinObj(std::string filename);
 	void loadBinObj(std::string filename);
@@ -106,7 +106,6 @@ private:
 	std::size_t _nTris;
 	sl::aabox3f _bbox;
 
-
 private:
 	typedef struct {
 		size_t nVertices;
@@ -116,5 +115,4 @@ private:
 		float bboxMin[3];
 		float bboxMax[3];
 	} BinObjHeader;
-	
 };

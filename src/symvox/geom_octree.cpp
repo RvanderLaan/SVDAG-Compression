@@ -147,7 +147,7 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
     if(!internalCall) printf("OK! [%s]\n",sl::human_readable_duration(_stats.buildSVOTime).c_str());
 }
 
-void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves) {
+void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves, char attrBit) {
 	
 	if (!internalCall) printf("* Building SVO... "); fflush(stdout);
 
@@ -207,6 +207,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 				if (_scene->getTrianglePtr(iTri) != NULL && testTriBox(childrenCenters[i], k, _scene->getTrianglePtr(iTri))) {
                     // Mark the child mask
                     node.setChildBit(i);
+
                     // If there is no child node inserted yet, and it's not a leaf, insert a child node
 					if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
 						node.children[i] = (id_t)_data[qi.level + 1].size();
@@ -217,10 +218,25 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     // If this child is not a leaf, continue intersecting its children in a future iteration
 					if((qi.level+1U) < _levels) queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
 					else {
-						if (putMaterialIdInLeaves) node.children[i] = (id_t)triMatId;
+                        // If it's a leaf, put attribute data here
+                        // if (putMaterialIdInLeaves) node.children[i] = (id_t)triMatId;
+
+                        // HAck: Put attribute bit instead of voxel bit
+                        if (putMaterialIdInLeaves) {
+                            sl::color3f c;
+                            _scene->getTriangleColor(iTri, c);
+                            if (c[0] < 0.5f) {
+                                // If red is less than 0.5, unset
+                                node.unsetChildBit(i);
+                            }
+                        }
+
+
+
 #if 0 // outputs a debug obj of voxels as points with their colours
 						sl::color3f c;
 						_scene->getTriangleColor(iTri, c);
+                        // Todo: BuildSVO but choose which triangle color bit to choose
 						printf("v %f %f %f %f %f %f\n", childrenCenters[i][0], childrenCenters[i][1], childrenCenters[i][2], c[0], c[1], c[2]);
 #endif
 					}

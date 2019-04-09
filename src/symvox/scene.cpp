@@ -22,6 +22,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cstring>
 #include <ctime>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -42,7 +43,7 @@ Scene::Scene() {
 	_bbox.to_empty();
 
 	TMaterial defaultMat;
-	sprintf(defaultMat.name, "Voxelator Default Mat");
+    sprintf(defaultMat.name, "Voxelator Default Mat");
 	defaultMat.ambientColor = sl::color3f(0.1, 0.1, 0.1);
 	defaultMat.diffuseColor = sl::color3f(0.9, 0.9, 0.9);
 	defaultMat.specColor = sl::color3f(0.2, 0.2, 0.2);
@@ -61,7 +62,7 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 			printf("OK!\n");
 			if (doBuildTriVector) {
 				printf("\t- Building tri vector... ");
-				buildTriVector(true);
+                buildTriVector(false);
 				printf("OK!\n");
 			}
 			printf("\t- Loaded %s triangles\n", sl::human_readable_quantity(_triangles.size()).c_str());
@@ -96,12 +97,12 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 	char str[len];
 	while (fgets(str, len, file) != NULL) {
 		nLine++;
-		if (nLine % 1000000L == 0) {
+        if (nLine % 1000000L == 0) {
 			printf(".%zuM.", nLine / 1000000L); fflush(stdout);
 			//printf("\b\b\b\b\b%3d %%", int(100 * (float(ftell(file)) / float(totalSize)))); fflush(stdout);
 			//printf("\t[%.2fs] Loaded %iM lines (%.2fM tris, %.2fM verts)\n", ETA(tini), nRead / 1000000, _nTris/1000000.0f, _vertices.size()/1000000.0f);
 			//printf("\tBbox: [%.4f, %.4f, %.4f]  [%.4f, %.4f, %.4f]\n\n", _bbMin.x, _bbMin.y, _bbMin.z, _bbMax.x, _bbMax.y, _bbMax.z);
-		}
+        }
 
 		switch (str[0]) {
 		case 'v': { //vertex data
@@ -230,9 +231,10 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 			if (loadMaterials) {
 				std::string mtlName(str + 7);
 				mtlName.resize(mtlName.size() - 1);
+
 				bool found = false;
 				for (std::size_t i = 0; i < _materials.size(); i++) {
-					if (_materials[i].name == mtlName) {
+                    if (strncmp(_materials[i].name, mtlName.c_str(), mtlName.size()) == 0) {
 						currentMat = i;
 						found = true;
 						break;
@@ -278,8 +280,8 @@ bool Scene::loadObjMtlLib(std::string fileName) {
 		return false;
 	}
 
-	std::string line, cmd, tmp;
-	TMaterial * mat = NULL;
+    std::string line, cmd, tmp;
+    TMaterial * mat = NULL;
 	std::size_t n = 0;
 	while (!ifs.eof()) {
 		std::getline(ifs, line);
@@ -287,35 +289,35 @@ bool Scene::loadObjMtlLib(std::string fileName) {
 			continue;
 		std::stringstream ss(line);
 		ss >> cmd;
-		if (cmd == "newmtl") {
-			if (mat) _materials.push_back(*mat);
-			mat = new TMaterial();
-			ss >> tmp;
-			strcpy(mat->name, tmp.c_str());
+        if (cmd == "newmtl") {
+            if (mat) _materials.push_back(*mat);
+            mat = new TMaterial();
+            ss >> tmp;
+            strcpy(mat->name, tmp.c_str());
 		}
 		else if (cmd == "Ka") {
 			sl::color3f c;
 			ss >> c[0] >> c[1] >> c[2];
-			mat->ambientColor = c;
+            mat->ambientColor = c;
 		}
 		else if (cmd == "Kd") {
 			sl::color3f c;
 			ss >> c[0] >> c[1] >> c[2];
-			mat->diffuseColor = c;
+            mat->diffuseColor = c;
 		}
 		else if (cmd == "Ks") {
 			sl::color3f c;
 			ss >> c[0] >> c[1] >> c[2];
-			mat->specColor = c;
+            mat->specColor = c;
 		}
 		else if (cmd == "Ns") {
-			ss >> mat->specCoef;
+            ss >> mat->specCoef;
 		}
 		else if (cmd == "d" || cmd == "Ts") {
-			ss >> mat->transparency;
+            ss >> mat->transparency;
 		}
 	}
-	if (mat)  _materials.push_back(*mat);
+    if (mat)  _materials.push_back(*mat);
 	printf("OK! (%zu materials loaded)] ", _materials.size());
 	ifs.close();
 	return true;
@@ -343,9 +345,7 @@ void Scene::saveBinObj(std::string filename) {
 	file.write((char*)&_materials[0], _materials.size() * sizeof(TMaterial));
 	file.write((char*)&_indexedTris[0], _indexedTris.size() * sizeof(TIndexedTri));
 
-	
-	file.close();
-	
+	file.close();	
 }
 
 void Scene::loadBinObj(std::string filename) {
@@ -408,8 +408,8 @@ void Scene::buildTriVector(bool clearOtherData) {
 		_vertices.shrink_to_fit();
 		_normals.clear();
 		_normals.shrink_to_fit();
-		_materials.clear();
-		_materials.shrink_to_fit();
+        _materials.clear();
+        _materials.shrink_to_fit();
 		_indexedTris.clear();
 		_indexedTris.shrink_to_fit();
 	}
