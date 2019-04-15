@@ -76,7 +76,6 @@ int main(int argc, char ** argv) {
   Scene scene;
 
   bool isLas = false;
-  bool isColorOctree = false;
 
   if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
     scene.loadObj(inputFile, true, true, false, false, true);
@@ -88,7 +87,7 @@ int main(int argc, char ** argv) {
     isLas = true;
   } else if (strstr(inputFile.c_str(), ".octree")) {
     // Jeroen Baert's .octree format (ooc_svo_builder)
-    isColorOctree = true;
+//    isColorOctree = true;
     
   } else {
     printf("Can't read input file '%s'. Only supported ASCII Obj files.\n", inputFile.c_str());
@@ -97,6 +96,7 @@ int main(int argc, char ** argv) {
 
 
   bool lossy = false;
+  bool isAttrOctree = true;
 
   GeomOctree octree(&scene);
 
@@ -104,17 +104,22 @@ int main(int argc, char ** argv) {
 
   EncodedSVO svo;
   if (levelStep == 0) {
-        if (!isLas) {
+    if (!isLas) {
+        if (isAttrOctree) {
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, true);
+            octree.toAttrSVO();
         } else {
-            octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
+            octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
         }
-        svo.encode(octree);
-        if (lossy) {
-            octree.toLossyDAG();
-        } else {
-            octree.toDAG();
-        }
+    } else {
+        octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
+    }
+    svo.encode(octree);
+    if (lossy) {
+        octree.toLossyDAG();
+    } else {
+        octree.toDAG();
+    }
   }
   else {
     octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);

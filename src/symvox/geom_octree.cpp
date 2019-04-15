@@ -219,19 +219,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 					if((qi.level+1U) < _levels) queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
 					else {
                         // If it's a leaf, put attribute data here
-                        // if (putMaterialIdInLeaves) node.children[i] = (id_t)triMatId;
-
-                        // HAck: Put attribute bit instead of voxel bit
-                        if (putMaterialIdInLeaves) {
-                            sl::color3f c;
-                            _scene->getTriangleColor(iTri, c);
-                            if (c[0] < 0.5f) {
-                                // If red is less than 0.5, unset
-                                node.unsetChildBit(i);
-                            }
-                        }
-
-
+                         if (putMaterialIdInLeaves) node.children[i] = (id_t)triMatId;
 
 #if 0 // outputs a debug obj of voxels as points with their colours
 						sl::color3f c;
@@ -285,7 +273,6 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	buildSVO(stepLevels, bbox, true, &leavesCenters);
 	
 	printf("OK! [%s]\n", sl::human_readable_duration(_clock.elapsed() - timeStamp).c_str()); fflush(stdout);
-	
 
 	double lhs = getHalfSideD(stepLevels - 1);
 	sl::vector3d corners[8];
@@ -307,7 +294,7 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	size_t memConsumed = 0;
 	size_t acumSubtreesDAGNNodes = 0;
 
-	printf("\t- Building %zu subtress (SVO->DAG) [%i threads]... ", _nVoxels, (int)omp_get_max_threads());
+    printf("\t- Building %zu subtrees (SVO->DAG) [%i threads]... ", _nVoxels, (int)omp_get_max_threads());
 	if (verbose) printf("\n");
 	timeStamp = _clock.elapsed();
 	float acumDAGTimeFactor = 0;
@@ -336,6 +323,7 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 #pragma omp atomic
 				_nVoxels += incVoxels; // root doesn't count
 
+                // Convert this subtree to a DAG
 				leafOctree->toDAG(true);
 
 #pragma omp atomic		
@@ -377,7 +365,9 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 
 	printf("\t- Joining subtrees... ");
 
+    // For every build step
 	for (int i = 0; i < _data[stepLevels - 1].size(); ++i) {
+        // For every of the 8 children
 		for (int j = 7; j >= 0; --j) {
 			if (_data[stepLevels - 1][i].existsChild(j)) {
 				GeomOctree * oct = leavesOctrees[i * 8 + j];
@@ -414,7 +404,98 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	_stats.buildDAGTime = _clock.elapsed();
 
 	printf("\t- Finished! Total time [%s]\n", sl::human_readable_duration(_stats.buildDAGTime).c_str());
+}
 
+/** Copies the SVO 8 times under a new root node, where the leaves of every copy indicate the n-th bit of an attribute (gray-scale color by default) **/
+void GeomOctree::toAttrSVO() {
+    // Given: An octree `oct` with material IDs as the children of the leaves
+
+    // Todo: Put the octree in each of the 8 children of the root node, but choose a different attr bit for each leaf
+
+    auto& materials = *_scene->getMaterials();
+    unsigned int newLevels = _levels + 1;
+    NodeData newData;
+    newData.resize(newLevels);
+    Node root;
+    for (int i = 0; i < 8; ++i) {
+        root.setChildBit(i);
+        root.children[i] = i;
+    }
+    newData[0].push_back(root);
+
+    unsigned int nNodesCount = 1;
+
+    // For every subtree (attr bit)
+    for (int i = 0; i < 8; ++i) {
+
+
+
+        // For every level in this tree, except leaves
+        for (int lev = 0; lev < _levels - 2; ++lev) { // lev is relative to old data, which is lev + 1 in newData
+            // Insert all nodes
+            newData[lev + 1].insert(newData[lev + 1].end(), _data[lev].begin(), _data[lev].end());
+            // Update pointers
+            id_t offset = (id_t) newData[lev + 2].size(); // offset child references in child level
+            for (unsigned int m = newData[lev+1].size() - _data[lev].size(); m < newData[lev + 1].size(); ++m) {
+                for (unsigned int n = 0; n < 8; ++n) {
+                    if (newData[lev + 1][m].existsChildPointer(n)) {
+                        newData[lev + 1][m].children[n] += offset;
+                    }
+                }
+            }
+            nNodesCount += _data[lev].size();
+        }
+
+        // For some reason, crash at node at level 1 .children...?
+
+        // Lastly insert the leaf nodes:
+        // For the leaf level, only set the childmask for voxels that have attr bit i set
+        // The input should have the material ID in its children field
+        for (auto leaf : _data[_levels - 1]) { // not auto &leaf since it should be a copy
+            for (int c = 0; c < 8; c++) {
+                if (leaf.existsChild(c)) {
+                    id_t matId = leaf.children[c];
+                    // Todo: try both for binary and for gray code
+                    // And for uniform + noisy colors
+                    sl::color3f c = materials[matId].diffuseColor;
+                    float f = c[0]; // todo: Get average color instead of red channel?
+
+                    // Add some randomness (0.02 * 256 = 5 values
+                    // f += 0.02f * (float(rand() % 1000) / 1000.f - 0.5f);
+
+                    sl::uint8_t attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 256.0));
+                    bool isAttrBitSet = (attr >> i) & 1;
+
+                    // Unset childmask bit if material color bit is not set
+                    if (!isAttrBitSet) {
+                        leaf.unsetChildBit(i);
+                    }
+                }
+            }
+            newData[newLevels - 1].push_back(leaf);
+        }
+        nNodesCount += _data[_levels - 1].size(); // add amount of leaves to node count
+    }
+
+    for (int i = 0; i< 8; ++i) {
+
+        unsigned int x = root.children[i];
+        unsigned int y = newData[0][0].children[i];
+        printf("\t root child %u = %u or %u\n", i, x, y);
+    }
+
+   // cleanEmptyNodes();
+
+    _levels = newLevels;
+    _data = newData;
+    _nNodes = _nNodes * 8 + 8 + 1; // todo: not sure why +8 is needed..?
+    _nVoxels = _nVoxels * 8;
+
+
+    _stats.nNodesSVO = _nNodes;
+    _stats.nNodesLastLevSVO = _data[_levels - 1].size();
+    _stats.simulatedEncodedSVOSize = (_stats.nNodesSVO - _stats.nNodesLastLevSVO) * 4;
+    _stats.nTotalVoxels = _nVoxels;
 }
 
 unsigned int GeomOctree::cleanEmptyNodes() {
@@ -437,7 +518,6 @@ unsigned int GeomOctree::cleanEmptyNodes() {
 	}
 	return nDelPtrs;
 }
-
 
 /**
  * @brief GeomOctree::toDAG Reduces a SVO to a lossy DAG
@@ -1226,7 +1306,7 @@ void GeomOctree::toSDAG(bool internalCall) {
 				uniqueNodesChecker[n] = (id_t)uniqueNodes.size();
 				correspondences[i] = MirroredNode(false, false, false, id_t(uniqueNodes.size()));
 				uniqueNodes.push_back(n);
-			}
+            }
 		}
         // Replace previous nodes on this level as the reduced set of symmetrically unique nodes
 		_data[lev].clear();

@@ -140,8 +140,10 @@ void EncodedSVO::encode(const GeomOctree & octree) {
 		EncodeTravNode travNode = stack.top(); stack.pop();
 
 		const GeomOctree::Node &node = octData[travNode.level][travNode.buildNodeId];
+
 		_data[travNode.encodedNodeId].ptr = (travNode.level < (_levels - 1)) ? sl::uint32_t(_data.size()) : 0;
 		for (int c = 7; c >= 0; --c) {
+            auto& child = node.children[c];
 			if (node.children[c] != GeomOctree::nullNode && travNode.level < (_levels - 1)) {
 				stack.push(EncodeTravNode(travNode.level + 1, node.children[c], sl::uint32_t(_data.size())));
 				_data.push_back(Node());
