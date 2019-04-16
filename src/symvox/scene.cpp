@@ -27,9 +27,9 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
-//#if BUILD_LASPARSER
+#if BUILD_LASPARSER
 #include <liblas/liblas.hpp>
-//#endif
+#endif
 
 #ifndef _MSC_VER
 #	include <string.h>
@@ -415,8 +415,8 @@ void Scene::buildTriVector(bool clearOtherData) {
 	}
 }
 
-//#if BUILD_LASPARSER
 void Scene::loadLas(std::string fileName) {
+	#if BUILD_LASPARSER
 
     printf("* Loading '%s'...\n", fileName.c_str());
 
@@ -437,5 +437,5 @@ void Scene::loadLas(std::string fileName) {
     _bbox[0] = sl::point3f(header.GetMinX(), header.GetMinY(), header.GetMinZ());
     _bbox[1] = sl::point3f(header.GetMaxX(), header.GetMaxY(), header.GetMaxZ());
     printf("\t- Bbox: [%.3f %.3f %.3f]  [%.3f %.3f %.3f]\n", _bbox[0][0], _bbox[0][1], _bbox[0][2], _bbox[1][0], _bbox[1][1], _bbox[1][2]);
+	#endif
 }
-//#endif

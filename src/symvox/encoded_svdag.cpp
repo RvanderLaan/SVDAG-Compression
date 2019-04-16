@@ -151,9 +151,9 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 //                        _data.push_back(truePtrs[levSizesAcum[n.children[k]] + n.childLevels[k]]);
 //                        _data.push_back(truePtrs[levSizeAcum]);
 
-                        id_t childAddr = n.children[k];
+						GeomOctree::id_t childAddr = n.children[k];
                         childAddr += levSizeAcum;
-                        id_t truePtr = truePtrs[childAddr];
+						GeomOctree::id_t truePtr = truePtrs[childAddr];
 
                         // Single level merging
                         _data.push_back(truePtr);

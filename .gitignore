@@ -9,3 +9,5 @@ models/
 CMakeLists.txt.user
 
 .vscode/ipch/
+
+.vs/

@@ -136,9 +136,9 @@ int main(int argc, char ** argv) {
   EncodedSVDAG svdag;
   svdag.encode(octree);
 
-    octree.findAllDuplicateSubtrees();
+  // octree.findAllDuplicateSubtrees();
 
-    if (!lossy) octree.toSDAG();
+  if (!lossy) octree.toSDAG();
 
 //    octree.findAllSymDuplicateSubtrees();
 

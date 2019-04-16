@@ -24,7 +24,10 @@
 #include <omp.h>
 
 #include <fstream>
+
+#if BUILD_LASPARSER
 #include <liblas/liblas.hpp>
+#endif
 
 #include<sl/external_array.hpp>
 
@@ -45,6 +48,8 @@ GeomOctree::GeomOctree(const GeomOctree &other) : Octree (other) {
 }
 
 void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters) {
+
+#if BUILD_LASPARSER
     if (!internalCall) printf("* Building SVO... "); fflush(stdout);
 
     _bbox = sl::conv_to<sl::aabox3f>::from(bbox);
@@ -145,6 +150,8 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
     _stats.nTotalVoxels = _nVoxels;
 
     if(!internalCall) printf("OK! [%s]\n",sl::human_readable_duration(_stats.buildSVOTime).c_str());
+
+#endif
 }
 
 void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves, char attrBit) {
@@ -428,10 +435,8 @@ void GeomOctree::toAttrSVO() {
     // For every subtree (attr bit)
     for (int i = 0; i < 8; ++i) {
 
-
-
         // For every level in this tree, except leaves
-        for (int lev = 0; lev < _levels - 2; ++lev) { // lev is relative to old data, which is lev + 1 in newData
+        for (int lev = 0; lev < _levels - 1; ++lev) { // lev is relative to old data, which is lev + 1 in newData
             // Insert all nodes
             newData[lev + 1].insert(newData[lev + 1].end(), _data[lev].begin(), _data[lev].end());
             // Update pointers
@@ -445,8 +450,6 @@ void GeomOctree::toAttrSVO() {
             }
             nNodesCount += _data[lev].size();
         }
-
-        // For some reason, crash at node at level 1 .children...?
 
         // Lastly insert the leaf nodes:
         // For the leaf level, only set the childmask for voxels that have attr bit i set
@@ -471,26 +474,21 @@ void GeomOctree::toAttrSVO() {
                         leaf.unsetChildBit(i);
                     }
                 }
+				leaf.children[c] = GeomOctree::nullNode;
             }
             newData[newLevels - 1].push_back(leaf);
         }
         nNodesCount += _data[_levels - 1].size(); // add amount of leaves to node count
     }
 
-    for (int i = 0; i< 8; ++i) {
+    cleanEmptyNodes();
 
-        unsigned int x = root.children[i];
-        unsigned int y = newData[0][0].children[i];
-        printf("\t root child %u = %u or %u\n", i, x, y);
-    }
-
-   // cleanEmptyNodes();
+	// Todo: recount nVoxels?
 
     _levels = newLevels;
     _data = newData;
     _nNodes = _nNodes * 8 + 8 + 1; // todo: not sure why +8 is needed..?
     _nVoxels = _nVoxels * 8;
-
 
     _stats.nNodesSVO = _nNodes;
     _stats.nNodesLastLevSVO = _data[_levels - 1].size();
