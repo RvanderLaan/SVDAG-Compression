@@ -531,6 +531,9 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 	traversal_status ts;
 	ts.t_current = t_min_max.x;
 	init(r, ts);
+
+	// Todo: For attr dag: start at level 1, without modifying the ray/traversal status
+//	go_down_one_level(r, ts);
 	
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);
@@ -636,6 +639,9 @@ void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
 	Ray r = computeCameraRay(screenCoords);
 
+	// Todo: Ray cast 8 times (for each bit)
+	// Start at the i-th child instead of at the root
+
 #if 0 // DEBUG for seeing the low-res first-depth pre-pass
 	if(useMinDepthTex) {
 		//color = texture(minDepthTex, (gl_FragCoord.xy/screenRes) ).xxx/10000.0f;
@@ -658,6 +664,9 @@ void main() {
 	
 		color = vec3(t, t, t);
 
+		/////////////////////////////////
+		// CUSTOMIZED:
+		/////////////////////////////////
 		// Assign random colors based on the index of a node
 		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
 //			color *= randomColor(uint(result.w));
@@ -700,7 +709,7 @@ void main() {
 
 void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
-	Ray r = computeCameraRay(screenCoords);	
+	Ray r = computeCameraRay(screenCoords);
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
 	vec4 result = trace_ray(r, t_min_max, projectionFactor);
 	if (result.x > 0) // Intersection!!!

@@ -417,7 +417,7 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 void GeomOctree::toAttrSVO() {
     // Given: An octree `oct` with material IDs as the children of the leaves
 
-    // Todo: Put the octree in each of the 8 children of the root node, but choose a different attr bit for each leaf
+    // Todo: Increase bbox size
 
     auto& materials = *_scene->getMaterials();
     unsigned int newLevels = _levels + 1;
@@ -455,9 +455,10 @@ void GeomOctree::toAttrSVO() {
         // For the leaf level, only set the childmask for voxels that have attr bit i set
         // The input should have the material ID in its children field
         for (auto leaf : _data[_levels - 1]) { // not auto &leaf since it should be a copy
-            for (int c = 0; c < 8; c++) {
-                if (leaf.existsChild(c)) {
-                    id_t matId = leaf.children[c];
+            for (int childIndex = 0; childIndex < 8; ++childIndex) {
+
+                if (leaf.existsChild(childIndex)) {
+                    id_t matId = leaf.children[childIndex];
                     // Todo: try both for binary and for gray code
                     // And for uniform + noisy colors
                     sl::color3f c = materials[matId].diffuseColor;
@@ -466,15 +467,16 @@ void GeomOctree::toAttrSVO() {
                     // Add some randomness (0.02 * 256 = 5 values
                     // f += 0.02f * (float(rand() % 1000) / 1000.f - 0.5f);
 
-                    sl::uint8_t attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 256.0));
+                    sl::uint8_t attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0)); // todo: * 256 or 255?
                     bool isAttrBitSet = (attr >> i) & 1;
 
                     // Unset childmask bit if material color bit is not set
                     if (!isAttrBitSet) {
-                        leaf.unsetChildBit(i);
+                        leaf.unsetChildBit(childIndex);
                     }
                 }
-				leaf.children[c] = GeomOctree::nullNode;
+				// Remove material ID from children: Leaves are not expected to have children (only a child mask)
+				leaf.children[childIndex] = GeomOctree::nullNode;
             }
             newData[newLevels - 1].push_back(leaf);
         }

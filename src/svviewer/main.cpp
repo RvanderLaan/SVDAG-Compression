@@ -131,6 +131,7 @@ void updateSceneEvents(GLFWwindow *win) {
 		int nodeIndex = getVoxelIndexAtCursor();
 
 		if (doHighlight) {
+			printf("Selected node at index %u\n", nodeIndex);
 			renderer->setSelectedVoxelIndex(nodeIndex == -1 ? 0 : nodeIndex);
 		}
 		else if (doDelete) {

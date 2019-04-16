@@ -408,8 +408,8 @@ void Scene::buildTriVector(bool clearOtherData) {
 		_vertices.shrink_to_fit();
 		_normals.clear();
 		_normals.shrink_to_fit();
-        _materials.clear();
-        _materials.shrink_to_fit();
+        //_materials.clear();
+        //_materials.shrink_to_fit();
 		_indexedTris.clear();
 		_indexedTris.shrink_to_fit();
 	}
