@@ -55,8 +55,9 @@ public:
 	inline void selectRenderMode(RenderMode mode) { _selectedRenderMode = mode; }
 
 	virtual void clearVoxel(int position);
-	inline void setSelectedVoxelIndex(int i) { _selectedVoxelIndex = i; }
+    inline void setSelectedVoxelIndex(int i) { _selectedVoxelIndex = i; }
 	inline void toggleRandomColors() { _randomColors = !_randomColors; }
+    inline void setAttrBit(int i) { _attrBit = i; }
 
 	inline sl::aabox3f getSceneBBox() { return _encodedOctree->getSceneBBox(); }
 	inline void setEncodedOctree(EncodedOctree * eo) { ; }
@@ -114,6 +115,7 @@ protected:
 	int _viewerRenderMode;
 	int _selectedVoxelIndex;
 	bool _randomColors;
+    int _attrBit;
 
 	// params mode SHADOW
 	sl::point3f _lightPos;

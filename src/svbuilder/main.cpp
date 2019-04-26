@@ -76,9 +76,11 @@ int main(int argc, char ** argv) {
   Scene scene;
 
   bool isLas = false;
+  bool lossy = false;
+  bool isAttrOctree = true;
 
   if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
-    scene.loadObj(inputFile, true, true, false, false, true);
+    scene.loadObj(inputFile, true, isAttrOctree, false, false, true);
   } else if (strstr(inputFile.c_str(), ".las") || strstr(inputFile.c_str(), ".LAS")) {
     scene.loadLas(inputFile);
     isLas = true;
@@ -94,10 +96,6 @@ int main(int argc, char ** argv) {
     exit(1);
   }
 
-
-  bool lossy = false;
-  bool isAttrOctree = true;
-
   GeomOctree octree(&scene);
 
   sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
@@ -107,6 +105,7 @@ int main(int argc, char ** argv) {
     if (!isLas) {
         if (isAttrOctree) {
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, true);
+            printf("Converting into attribute DAG...\n");
             octree.toAttrSVO();
         } else {
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);

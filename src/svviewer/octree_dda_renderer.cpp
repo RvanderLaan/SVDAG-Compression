@@ -368,10 +368,13 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 		glUniform1f(_program[_selectedRenderMode].getUniformID("projectionFactor"), _projectionFactor);
 	}
 
-	if (_selectedRenderMode == VIEWER)
+    if (_selectedRenderMode == VIEWER) {
 		glUniform1i(_program[_selectedRenderMode].getUniformID("viewerRenderMode"), _viewerRenderMode);
 		glUniform1ui(_program[_selectedRenderMode].getUniformID("selectedVoxelIndex"), _selectedVoxelIndex);
 		glUniform1i(_program[_selectedRenderMode].getUniformID("randomColors"), _randomColors);
+    }
+
+    glUniform1i(_program[_selectedRenderMode].getUniformID("attrBit"), _attrBit);
 
 	if (_selectedRenderMode == SHADOW)
 		glUniform3fv(_program[_selectedRenderMode].getUniformID("lightPos"), 1, _lightPos.to_pointer());
