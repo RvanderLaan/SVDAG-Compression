@@ -76,7 +76,12 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 
 	// generic keys
 	if (key == GLFW_KEY_ESCAPE) finish = true;
-
+    if (key == GLFW_KEY_1) renderer->decDrawLevel();
+    if (key == GLFW_KEY_2) renderer->incDrawLevel();
+    if (key == GLFW_KEY_3) renderer->decGPUTraversalMaxIters(10);
+    if (key == GLFW_KEY_4) renderer->incGPUTraversalMaxIters(10);
+    if (key == GLFW_KEY_5) renderer->decPixelTolerance();
+    if (key == GLFW_KEY_6) renderer->incPixelTolerance();
 	if (key == GLFW_KEY_R) renderer->nextViewerRenderMode();
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
 	if (key == GLFW_KEY_K) renderer->toggleRandomColors();

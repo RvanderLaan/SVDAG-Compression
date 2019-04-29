@@ -41,6 +41,7 @@ OctreeDDARenderer::OctreeDDARenderer(EncodedOctree * eo) {
 
 	_selectedVoxelIndex = 0;
 	_randomColors = true;
+    _attrBit = 0;
 
 	if (dynamic_cast<EncodedSVO*>(_encodedOctree) != NULL) {
 		_octreeFormat = SVO;
@@ -342,6 +343,7 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 		_projectionFactor = getProjectionFactor(1.0f, 8.0f); // FIXME ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
 		glUniform1f(_program[DEPTH].getUniformID("projectionFactor"), _projectionFactor);
 		glUniform2f(_program[DEPTH].getUniformID("screenRes"), _screenRes[0] / 8, _screenRes[1] / 8);
+        glUniform1i(_program[_selectedRenderMode].getUniformID("attrBit"), _attrBit);
 		glBindFramebuffer(GL_FRAMEBUFFER, _glFBO);
 		glClearColor(0.0, 0.0, 0.0, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);

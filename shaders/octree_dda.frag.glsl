@@ -539,8 +539,10 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 	ts.t_current = t_min_max.x;
         init(r, ts);
 
-        // Todo: For attr dag: start at level 1, without modifying the ray/traversal status
+        // For attr dag: start at level 1, without modifying the ray/traversal status
+
         go_down_attr_root(r, ts, attrBit);
+
 	
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);
@@ -687,7 +689,7 @@ void main() {
 		} else if (result.w == selectedVoxelIndex) {
 			// Highlight selected voxel index with blue
 			color.r *= 0.5f;
-			color.g *= 0.5f;
+                        color.g *= 0.5f;
 			color.b = 1.f;
 		}
 	}

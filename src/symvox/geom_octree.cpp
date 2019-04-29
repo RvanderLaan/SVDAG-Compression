@@ -215,22 +215,38 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     // Mark the child mask
                     node.setChildBit(i);
 
-                    // If there is no child node inserted yet, and it's not a leaf, insert a child node
-					if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
-						node.children[i] = (id_t)_data[qi.level + 1].size();
-                        _data[qi.level + 1].emplace_back(qi.level + 1);
-						_nNodes++;
-						if (leavesCenters!=NULL && (qi.level == (_levels - 2))) leavesCenters->push_back(childrenCenters[i]);
-					}
-                    // If this child is not a leaf, continue intersecting its children in a future iteration
-					if((qi.level+1U) < _levels) queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
-					else {
-                        // If it's a leaf, put attribute data here
-                         if (putMaterialIdInLeaves) node.children[i] = (id_t)triMatId;
+                    if (qi.level < (_levels - 1)) {
+                        // If it's an internal node, and there is no child node inserted yet, insert a child node
+                        if (!node.existsChildPointer(i)) {
+                            node.children[i] = (id_t)_data[qi.level + 1].size();
+                            _data[qi.level + 1].emplace_back(qi.level + 1);
+                            _nNodes++;
+                            if (leavesCenters!=NULL && (qi.level == (_levels - 2))) {
+                                leavesCenters->push_back(childrenCenters[i]);
+                            }
+                        }
+
+                        // If this child is not a leaf, continue intersecting its children in a future iteration
+                        queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
+                    } else {
+                        // If it's a leaf, do nothing unless we want attribute data here
+                        if (putMaterialIdInLeaves) {
+                            node.children[i] = (id_t)triMatId;
+
+                            // Todo: When using textures, look up the texture color of this triangle
+                            // The RGB colors can be put into the children of a new node
+
+                            // Other option: Since the children are unsigned ints,
+                            // we can put the attributes in a big vector of vec3's, where those child ints act like indices
+
+                            // Find closest point on triangle to node center
+                            // Look up color at UV coordinates
+                            // Should be a function of the scene, like scene->getTextureColor(uv, c)
+                        }
 
 #if 0 // outputs a debug obj of voxels as points with their colours
 						sl::color3f c;
-						_scene->getTriangleColor(iTri, c);
+//						_scene->getTriangleColor(iTri, c);
                         // Todo: BuildSVO but choose which triangle color bit to choose
 						printf("v %f %f %f %f %f %f\n", childrenCenters[i][0], childrenCenters[i][1], childrenCenters[i][2], c[0], c[1], c[2]);
 #endif
@@ -416,8 +432,7 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 /** Copies the SVO 8 times under a new root node, where the leaves of every copy indicate the n-th bit of an attribute (gray-scale color by default) **/
 void GeomOctree::toAttrSVO() {
     // Given: An octree `oct` with material IDs as the children of the leaves
-
-    // Todo: Increase bbox size
+    // Later, we can put other attributes in the leaves as well
 
     auto& materials = *_scene->getMaterials();
     unsigned int newLevels = _levels + 1;
@@ -432,6 +447,7 @@ void GeomOctree::toAttrSVO() {
 
     unsigned int nNodesCount = 1;
 
+    // Todo: Needs to be adjustable for more/less attribute bits; not always 8
     // For every subtree (attr bit)
     for (int i = 0; i < 8; ++i) {
 
@@ -455,6 +471,7 @@ void GeomOctree::toAttrSVO() {
         // For the leaf level, only set the childmask for voxels that have attr bit i set
         // The input should have the material ID in its children field
         for (auto leaf : _data[_levels - 1]) { // not auto &leaf since it should be a copy
+
             for (int childIndex = 0; childIndex < 8; ++childIndex) {
 
                 if (leaf.existsChild(childIndex)) {
@@ -476,21 +493,40 @@ void GeomOctree::toAttrSVO() {
                     }
                 }
 				// Remove material ID from children: Leaves are not expected to have children (only a child mask)
-				leaf.children[childIndex] = GeomOctree::nullNode;
+                leaf.children[childIndex] = nullNode;
             }
-            newData[newLevels - 1].push_back(leaf);
+            if (leaf.hasChildren()) {
+                newData[newLevels - 1].push_back(leaf);
+            } else {
+                newData[newLevels - 1].push_back(nullNode);
+            }
         }
         nNodesCount += _data[_levels - 1].size(); // add amount of leaves to node count
     }
 
-    cleanEmptyNodes();
-
-	// Todo: recount nVoxels?
-
     _levels = newLevels;
     _data = newData;
-    _nNodes = _nNodes * 8 + 8 + 1; // todo: not sure why +8 is needed..?
-    _nVoxels = _nVoxels * 8;
+
+    // Todo: there is a problem with removing voxels
+    // nodes need to be inserted into newData only when their children exist
+    // a bit annoying to set offsets correctly...
+
+    // Remove nodes without children
+     unsigned int numRemovedVoxels = cleanEmptyNodes();
+
+    // recompute NVoxels
+    _nVoxels = 0;
+    for (id_t i = 0; i < _data[_levels - 1].size(); ++i) {
+        _nVoxels += _data[_levels - 1][i].getNChildren();
+    }
+
+    // Recompute nNodes
+    //    _nNodes = nNodesCount - numRemovedVoxels;
+    _nNodes = 0;
+    for (int lev = 0; lev < _levels; ++lev) {
+        _data[lev].shrink_to_fit();
+        _nNodes += _data[lev].size();
+    }
 
     _stats.nNodesSVO = _nNodes;
     _stats.nNodesLastLevSVO = _data[_levels - 1].size();
@@ -504,7 +540,9 @@ unsigned int GeomOctree::cleanEmptyNodes() {
 	for (int lev = _levels - 1; lev > 0; --lev) {
 		emptyNodes.clear();
 		for (id_t i = 0; i < _data[lev].size(); ++i) {
-			if (!_data[lev][i].hasChildren()) emptyNodes.insert(i);
+            if (!_data[lev][i].hasChildren()) {
+                emptyNodes.insert(i);
+            }
 		}
 		for (id_t i = 0; i < _data[lev-1].size(); ++i) {
 			for (int j = 0; j < 8; ++j) {

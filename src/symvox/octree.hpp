@@ -63,8 +63,12 @@ public:  //////// Octree Node
 		// Methods
 		inline bool existsChild(int childId) const { return (childrenBitmask & (1U << childId)) != 0; }
 		inline bool existsChildPointer(int childId) const { return (children[childId] != nullNode); }
-		inline bool hasChildren() const { return (childrenBitmask != 0); }
+        inline bool hasChildren() const { return (childrenBitmask != 0); }
 		inline unsigned int getNChildren() const { return (childrenBitmask * 01001001001ULL & 042104210421ULL) % 017; }
+        inline bool hasNullChildren() {
+            return children[0] == nullNode && children[1] == nullNode && children[2] == nullNode && children[3] == nullNode
+                    && children[4] == nullNode && children[5] == nullNode && children[6] == nullNode && children[7] == nullNode;
+        }
 
         inline void setChildBit(int childId) { childrenBitmask |= (1U << childId); }
 		inline void unsetChildBit(int childId) { childrenBitmask &= ~(1U << childId); }

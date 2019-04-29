@@ -195,10 +195,12 @@ int EncodedSVDAG::getNodeIndex(sl::point3f p) const
 {
 	TravNode curNode = getRootTravNode();
 	sl::point3f nodeCenter = _sceneBBox.center();
-
 	bool mX = false, mY = false, mZ = false;
 
-	for (int i = 0; i < getNLevels(); i++) {
+    // FIXME: For attribute DAG, get the first node (bit) for now
+    curNode = getChild(curNode, 0, mX, mY, mZ);
+
+    for (int i = 0; i < getNLevels(); i++) {
 
 		if (mX) p[0] = 2.f * nodeCenter[0] - p[0];
 		if (mY) p[1] = 2.f * nodeCenter[1] - p[1];
@@ -209,7 +211,7 @@ int EncodedSVDAG::getNodeIndex(sl::point3f p) const
 			printf("L%u|", i);
 			break;
 		}
-		float hs = getHalfSide(i + 1);
+        float hs = getHalfSide(i); // todo: +1 if not attr dag
 		nodeCenter[0] += (p[0] > nodeCenter[0]) ? hs : -1.f * hs;
 		nodeCenter[1] += (p[1] > nodeCenter[1]) ? hs : -1.f * hs;
 		nodeCenter[2] += (p[2] > nodeCenter[2]) ? hs : -1.f * hs;

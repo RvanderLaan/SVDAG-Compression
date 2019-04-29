@@ -104,6 +104,8 @@ int main(int argc, char ** argv) {
   if (levelStep == 0) {
     if (!isLas) {
         if (isAttrOctree) {
+            // Todo: Better performance would be: Put attributes in svo, turn into DAG, copy DAG for each attr bit, clean empty nodes
+            // Now it's: Put material ID in SVO, copy SVO 8 times, turn all into DAG
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, true);
             printf("Converting into attribute DAG...\n");
             octree.toAttrSVO();
