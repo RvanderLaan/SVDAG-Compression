@@ -101,7 +101,7 @@ public:
 	}
     inline void getTexColor(const std::string texName, const sl::vector2f & uv, sl::color3f & c) {
 	    if (_textures.count(texName) == 0) {
-	        printf("Texture not found: %s", texName.c_str());
+	        printf("Texture not found: '%s'\n", texName.c_str());
 	        return;
 	    }
         auto texture = _textures[texName];
@@ -128,7 +128,7 @@ public:
 	void testOutput(std::string filename);
 
 	inline void loadTextures(std::string path) {
-	    _materials.clear();
+	    _textures.clear();
 	    for (auto material : _materials) {
 	        std::string texName(material.texture);
 	        if (texName.size() > 3 && this->_textures.count(texName) == 0) {

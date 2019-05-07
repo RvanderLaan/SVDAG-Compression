@@ -177,6 +177,9 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 	sl::point3d childrenCenters[8];
 	std::stack<QueueItem> queue;
 
+    auto &materials = *_scene->getMaterials();
+    float u, v, w; // barycentric coords
+
 	if(!internalCall) _clock.restart();
 
 	int stepLogger = (int)round(_scene->getNRawTriangles() / 10.f);
@@ -231,36 +234,44 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     } else {
                         // If it's a leaf, do nothing unless we want attribute data here
                         if (putMaterialIdInLeaves) {
-                            node.children[i] = (id_t)triMatId;
+                            float attr; // only 1 uint8 for now (gray scale), later we can add more channels
+//                            node.children[i] = (id_t) triMatId;
 
 
-                            // Todo: Check if triangle has texture
-                            if (this->_scene->isTriangleTextured(iTri)) {
-//                                _scene->getTriangleColor()
-                                // Todo: Find uv coordinate of this voxel on this triangle
-                                sl::point3f closestPoint = closestPointOnTri(qi.center, _scene->getTrianglePtr(iTri));
-                                // put tex color somewhere in children or external attribute list
+                            auto material = materials[triMatId];
+                            std::string texName(material.texture);
 
-                                // https://answers.unity.com/questions/383804/calculate-uv-coordinates-of-3d-point-on-plane-of-m.html
-                                // ( https://gamedev.stackexchange.com/questions/23743/whats-the-most-efficient-way-to-find-barycentric-coordinates )
+                            // Check if triangle has texture
+                            if (this->_scene->isTriangleTextured(iTri) && texName != "") {
+                                // Compute barycentric coordinates of the center of this voxel to this triangle
+                                barycentric(qi.center, _scene->getTrianglePtr(iTri), u, v, w);
 
-                                auto &materials = *_scene->getMaterials();
-                                std::string texName(materials[triMatId].texture);
+                                // Use that to find the texture coordinates of that point on the texture
                                 sl::vector2f t0, t1, t2;
-                                sl::vector3f color;
                                 _scene->getTriangleTexCoords(iTri, t0, t1, t2);
-                                _scene->getTexColor(texName, t0, color);
+                                sl::vector2f voxTexCoords = u * t0 + v * t1 + w * t2;
+
+                                // Look up texture color at those coordinates
+                                // TODO: Use texture LOD or bigger sample size depending on size ratio of triangle to voxel
+                                sl::vector3f color;
+                                _scene->getTexColor(texName, voxTexCoords, color);
+
+                                float f = color[0];
+
+                                // Todo: try both for binary and for gray code
+                                attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
+                            } else {
+                                // Todo: average rgb -> gray instead of just the red channel
+                                float f = materials[triMatId].diffuseColor[0];
+                                // If not textured, use diffuse color
+                                attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0)); // todo: * 256 or 255?
                             }
 
-                            // Todo: When using textures, look up the texture color of this triangle
-                            // The RGB colors can be put into the children of a new node
+                            // Todo: For more than 1 attribute, use a vector of attributes
+                            // this->attributes.push_back(attr);
 
-                            // Other option: Since the children are unsigned ints,
-                            // we can put the attributes in a big vector of vec3's, where those child ints act like indices
-
-                            // Find closest point on triangle to node center
-                            // Look up color at UV coordinates
-                            // Should be a function of the scene, like scene->getTextureColor(uv, c)
+                            // For now, just put it in children
+                            node.children[i] = (id_t) attr;
                         }
 
 #if 0 // outputs a debug obj of voxels as points with their colours
@@ -473,7 +484,7 @@ void GeomOctree::toAttrSVO() {
 
     // Todo: Needs to be adjustable for more/less attribute bits; not always 8
     // For every subtree (attr bit)
-    for (int i = 0; i < 8; ++i) {
+    for (unsigned int i = 0; i < 8; ++i) {
 
         // For every level in this tree, except leaves
         for (int lev = 0; lev < _levels - 1; ++lev) { // lev is relative to old data, which is lev + 1 in newData
@@ -499,17 +510,7 @@ void GeomOctree::toAttrSVO() {
             for (int childIndex = 0; childIndex < 8; ++childIndex) {
 
                 if (leaf.existsChild(childIndex)) {
-                    id_t matId = leaf.children[childIndex];
-                    // Todo: try both for binary and for gray code
-                    // And for uniform + noisy colors
-                    sl::color3f c = materials[matId].diffuseColor;
-                    float f = c[0]; // todo: Get average color instead of red channel?
-
-
-                    // Add some randomness (0.02 * 256 = 5 values
-                    // f += 0.02f * (float(rand() % 1000) / 1000.f - 0.5f);
-
-                    auto attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0)); // todo: * 256 or 255?
+                    sl::uint8_t attr = leaf.children[childIndex];
                     bool isAttrBitSet = (attr >> i) & 1;
 
                     // Unset childmask bit if material color bit is not set
