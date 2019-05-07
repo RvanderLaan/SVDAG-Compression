@@ -101,6 +101,7 @@ INCLUDE_DIRECTORIES( ${OPENGL_INCLUDE_DIRS} )
 INCLUDE_DIRECTORIES( ${GLFW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${GLEW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${LIBLAS_INCLUDE_DIRS} )
+INCLUDE_DIRECTORIES( "${PROJECT_SOURCE_DIR}/include" )
 
 #############################################################
 ##################### SYMVOX LIBRARY ###########################
@@ -141,7 +142,7 @@ TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
 ADD_EXECUTABLE( svbuilder
 	src/svbuilder/main.cpp
 )
-TARGET_LINK_LIBRARIES(svbuilder symvox)
+TARGET_LINK_LIBRARIES(svbuilder symvox X11 m pthread)
 
 #############################################################
 ####################### SYMVOX VIEWER ##########################

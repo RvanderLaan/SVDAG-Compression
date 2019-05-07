@@ -81,6 +81,9 @@ int main(int argc, char ** argv) {
 
   if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
     scene.loadObj(inputFile, true, isAttrOctree, false, false, true);
+    if (isAttrOctree) {
+        scene.loadTextures(sl::pathname_directory(inputFile));
+    }
   } else if (strstr(inputFile.c_str(), ".las") || strstr(inputFile.c_str(), ".LAS")) {
     scene.loadLas(inputFile);
     isLas = true;

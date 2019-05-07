@@ -18,7 +18,7 @@
 //=============================================================
 
 /// TRIANGLE - BOX Intersection Code ------------------------------------
-/// by Tomas Akenine-Möller
+/// by Tomas Akenine-Mï¿½ller
 /// see http://fileadmin.cs.lth.se/cs/Personal/Tomas_Akenine-Moller/code/
 /////////////////////////////////////////////////////////////////////////
 
@@ -181,4 +181,83 @@ bool testTriBox(const sl::point3d boxCenter, const double boxHalfSide, const sl:
 
 	return true;   /* box and triangle overlaps */
 
+}
+
+float clamp(float n, float lower, float upper) {
+    return std::max(lower, std::min(n, upper));
+}
+
+/** From https://www.gamedev.net/forums/topic/552906-closest-point-on-triangle/ **/
+sl::point3f closestPointOnTri(const sl::point3d p, const sl::point3f *triangle) {
+    sl::vector3f pos = sl::conv_to<sl::vector3f>::from(p.as_vector());
+
+    sl::vector3f edge0 = triangle[1] - triangle[0];
+    sl::vector3f edge1 = triangle[2] - triangle[0];
+    sl::vector3f v0 = triangle[0].as_vector() - pos;
+
+    float a = edge0.dot( edge0 );
+    float b = edge0.dot( edge1 );
+    float c = edge1.dot( edge1 );
+    float d = edge0.dot( v0 );
+    float e = edge1.dot( v0 );
+
+    float det = a*c - b*b;
+    float s = b*e - c*d;
+    float t = b*d - a*e;
+
+    if ( s + t < det ) {
+        if ( s < 0.f ) {
+            if ( t < 0.f ) {
+                if ( d < 0.f ) {
+                    s = clamp( -d/a, 0.f, 1.f );
+                    t = 0.f;
+                } else {
+                    s = 0.f;
+                    t = clamp( -e/c, 0.f, 1.f );
+                }
+            } else {
+                s = 0.f;
+                t = clamp( -e/c, 0.f, 1.f );
+            }
+        } else if ( t < 0.f ) {
+            s = clamp( -d/a, 0.f, 1.f );
+            t = 0.f;
+        } else {
+            float invDet = 1.f / det;
+            s *= invDet;
+            t *= invDet;
+        }
+    } else {
+        if ( s < 0.f ) {
+            float tmp0 = b+d;
+            float tmp1 = c+e;
+            if ( tmp1 > tmp0 ) {
+                float numer = tmp1 - tmp0;
+                float denom = a-2*b+c;
+                s = clamp( numer/denom, 0.f, 1.f );
+                t = 1-s;
+            } else {
+                t = clamp( -e/c, 0.f, 1.f );
+                s = 0.f;
+            }
+        }
+        else if ( t < 0.f ) {
+            if ( a+d > b+e ) {
+                float numer = c+e-b-d;
+                float denom = a-2*b+c;
+                s = clamp( numer/denom, 0.f, 1.f );
+                t = 1-s;
+            } else {
+                s = clamp( -e/c, 0.f, 1.f );
+                t = 0.f;
+            }
+        } else {
+            float numer = c+e-b-d;
+            float denom = a-2*b+c;
+            s = clamp( numer/denom, 0.f, 1.f );
+            t = 1.f - s;
+        }
+    }
+
+    return triangle[0] + s * edge0 + t * edge1;
 }

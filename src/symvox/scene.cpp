@@ -116,9 +116,14 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 				}
 				break;
 			}
-			case 't': // tex coord
+            case 't': // tex coord
 			{
-				// Not dealing with this
+                // Yes dealing with this
+                if (loadMaterials) {
+                    sl::vector2f v;
+                    sscanf(str + 2, "%f %f", &v[0], &v[1]);
+                    _texCoords.push_back(v);
+                }
 				break;
 			}
 			default: //vertex
@@ -137,6 +142,7 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 			break;
 		}
 		case 'f': { // face
+		    // Format doc: https://en.wikipedia.org/wiki/Wavefront_.obj_file
 			std::vector<std::string> triples;
 			char *next_token;
 			char *pch = strtok_s(str + 1, " ", &next_token);
@@ -152,21 +158,33 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 			itri.material = currentMat;
 			bool noNormal = false;
 			for (int i = 0; i < 3; ++i) {
-				int idxV=0, idxN=0;
-				int n = sscanf(triples[i].c_str(), "%d//%d", &idxV, &idxN);
+				int idxV=0, idxT=0, idxN=0;
+                bool hasNormWithoutTex = triples[i].find("//") != std::string::npos;
+				int n = hasNormWithoutTex
+				        ? sscanf(triples[i].c_str(), "%d//%d", &idxV, &idxN)
+				        : sscanf(triples[i].c_str(), "%d/%d/%d", &idxV, &idxT, &idxN);
 				// negative indices
 				if (idxV < 0) idxV = int(_vertices.size()) + idxV + 1;
+				if (idxT < 0) idxT = int(_texCoords.size()) + idxT + 1;
 				if (idxN < 0) idxN = int(_normals.size()) + idxN + 1;
 				if (n == 0) {
 					std::cout << "ERROR:Scene:loadObj: problem parsing face instruction" << std::endl;
-				}
-				else if (n == 1) { // just vertex info
+				} else if (n == 1) { // just vertex info
 					itri.verticesIdx[i] = idxV - 1;
 					noNormal = true;
-				}
-				else if (n == 2) { // vertex and normal info
+                    itri.texCoordIdx[i] = -1; // texCoordIdx of -1 indicates that this triangle does not have a tex
+				} else if (n == 2 && hasNormWithoutTex) { // vertex and normal info
 					itri.verticesIdx[i] = idxV - 1;
 					if (!recomputeNormals) itri.normalsIdx[i] = idxN - 1;
+                    itri.texCoordIdx[i] = -1;
+                } else if (n == 2) { // vertex and tex coord info
+                    itri.verticesIdx[i] = idxV - 1;
+                    if (loadMaterials) itri.texCoordIdx[i] = idxT - 1;
+                    noNormal = true;
+				} else { // vertex, normal and tex info
+                    itri.verticesIdx[i] = idxV - 1;
+                    if (!recomputeNormals) itri.normalsIdx[i] = idxN - 1;
+                    if (loadMaterials) itri.texCoordIdx[i] = idxT - 1;
 				}
 			}
 
@@ -212,7 +230,9 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 				_indexedTris.push_back(itri);
 				_nTris++;
 
-			}
+                // TODO: Fix texture coordinates for quads. Not dealing with this now, just assume the model is triangulated
+            }
+
 
 			break;
 		}
@@ -316,6 +336,10 @@ bool Scene::loadObjMtlLib(std::string fileName) {
 		else if (cmd == "d" || cmd == "Ts") {
             ss >> mat->transparency;
 		}
+        else if (cmd == "map_Kd") { // diffuse texture
+            ss >> tmp;
+            strcpy(mat->texture, tmp.c_str());
+        }
 	}
     if (mat)  _materials.push_back(*mat);
 	printf("OK! (%zu materials loaded)] ", _materials.size());
@@ -329,6 +353,7 @@ void Scene::saveBinObj(std::string filename) {
 	header.nVertices = _vertices.size();
 	header.nNormals = _normals.size();
 	header.nMaterials = _materials.size();
+    header.nTexCoords = _texCoords.size();
 	header.nIndexedTris = _indexedTris.size();
 	header.bboxMin[0] = _bbox[0][0];
 	header.bboxMin[1] = _bbox[0][1];
@@ -342,7 +367,10 @@ void Scene::saveBinObj(std::string filename) {
 	
 	file.write((char*)&_vertices[0], _vertices.size() * sizeof(sl::point3f));
 	if (_normals.size() > 0) file.write((char*)&_normals[0], _normals.size() * sizeof(sl::vector3f));
+
 	file.write((char*)&_materials[0], _materials.size() * sizeof(TMaterial));
+
+    if (_texCoords.size() > 0) file.write((char*)&_texCoords[0], _texCoords.size() * sizeof(sl::vector2f));
 	file.write((char*)&_indexedTris[0], _indexedTris.size() * sizeof(TIndexedTri));
 
 	file.close();	
@@ -366,6 +394,9 @@ void Scene::loadBinObj(std::string filename) {
 
 	_materials.resize(header.nMaterials);
 	file.read((char *)(&_materials[0]), header.nMaterials*sizeof(TMaterial));
+
+    _texCoords.resize(header.nTexCoords);
+    if (header.nTexCoords > 0) file.read((char *)(&_texCoords[0]), header.nTexCoords*sizeof(sl::vector2f));
 
 	_indexedTris.resize(header.nIndexedTris);
 	file.read((char *)(&_indexedTris[0]), header.nIndexedTris*sizeof(TIndexedTri));
@@ -404,14 +435,11 @@ void Scene::buildTriVector(bool clearOtherData) {
 	}
 
 	if (clearOtherData) {
-		_vertices.clear();
-		_vertices.shrink_to_fit();
-		_normals.clear();
-		_normals.shrink_to_fit();
-        //_materials.clear();
-        //_materials.shrink_to_fit();
-		_indexedTris.clear();
-		_indexedTris.shrink_to_fit();
+		_vertices.clear(); _vertices.shrink_to_fit();
+		_normals.clear(); _normals.shrink_to_fit();
+        //_materials.clear(); _materials.shrink_to_fit(); // causes some problems with building the attr dag
+        _texCoords.clear(); _texCoords.shrink_to_fit();
+		_indexedTris.clear(); _indexedTris.shrink_to_fit();
 	}
 }
 

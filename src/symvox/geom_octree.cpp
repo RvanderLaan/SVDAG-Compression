@@ -233,6 +233,25 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                         if (putMaterialIdInLeaves) {
                             node.children[i] = (id_t)triMatId;
 
+
+                            // Todo: Check if triangle has texture
+                            if (this->_scene->isTriangleTextured(iTri)) {
+//                                _scene->getTriangleColor()
+                                // Todo: Find uv coordinate of this voxel on this triangle
+                                sl::point3f closestPoint = closestPointOnTri(qi.center, _scene->getTrianglePtr(iTri));
+                                // put tex color somewhere in children or external attribute list
+
+                                // https://answers.unity.com/questions/383804/calculate-uv-coordinates-of-3d-point-on-plane-of-m.html
+                                // ( https://gamedev.stackexchange.com/questions/23743/whats-the-most-efficient-way-to-find-barycentric-coordinates )
+
+                                auto &materials = *_scene->getMaterials();
+                                std::string texName(materials[triMatId].texture);
+                                sl::vector2f t0, t1, t2;
+                                sl::vector3f color;
+                                _scene->getTriangleTexCoords(iTri, t0, t1, t2);
+                                _scene->getTexColor(texName, t0, color);
+                            }
+
                             // Todo: When using textures, look up the texture color of this triangle
                             // The RGB colors can be put into the children of a new node
 
@@ -429,6 +448,11 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	printf("\t- Finished! Total time [%s]\n", sl::human_readable_duration(_stats.buildDAGTime).c_str());
 }
 
+void GeomOctree::toAttrDAG() {
+    unsigned int numAttrBits = 8;
+
+}
+
 /** Copies the SVO 8 times under a new root node, where the leaves of every copy indicate the n-th bit of an attribute (gray-scale color by default) **/
 void GeomOctree::toAttrSVO() {
     // Given: An octree `oct` with material IDs as the children of the leaves
@@ -481,10 +505,11 @@ void GeomOctree::toAttrSVO() {
                     sl::color3f c = materials[matId].diffuseColor;
                     float f = c[0]; // todo: Get average color instead of red channel?
 
+
                     // Add some randomness (0.02 * 256 = 5 values
                     // f += 0.02f * (float(rand() % 1000) / 1000.f - 0.5f);
 
-                    sl::uint8_t attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0)); // todo: * 256 or 255?
+                    auto attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0)); // todo: * 256 or 255?
                     bool isAttrBitSet = (attr >> i) & 1;
 
                     // Unset childmask bit if material color bit is not set
@@ -512,7 +537,7 @@ void GeomOctree::toAttrSVO() {
     // a bit annoying to set offsets correctly...
 
     // Remove nodes without children
-     unsigned int numRemovedVoxels = cleanEmptyNodes();
+//    cleanEmptyNodes();
 
     // recompute NVoxels
     _nVoxels = 0;
@@ -520,13 +545,7 @@ void GeomOctree::toAttrSVO() {
         _nVoxels += _data[_levels - 1][i].getNChildren();
     }
 
-    // Recompute nNodes
-    //    _nNodes = nNodesCount - numRemovedVoxels;
-    _nNodes = 0;
-    for (int lev = 0; lev < _levels; ++lev) {
-        _data[lev].shrink_to_fit();
-        _nNodes += _data[lev].size();
-    }
+    _nNodes = nNodesCount;
 
     _stats.nNodesSVO = _nNodes;
     _stats.nNodesLastLevSVO = _data[_levels - 1].size();
@@ -534,6 +553,36 @@ void GeomOctree::toAttrSVO() {
     _stats.nTotalVoxels = _nVoxels;
 }
 
+/** Removes empty nodes from the SVO and updates pointers accordingly */
+void GeomOctree::cleanEmptyAttrNodes() {
+    std::set<id_t> removedNodes;
+    unsigned int nDelPtrs = 0;
+    // For every level, starting at the leaves
+    for (int lev = _levels - 1; lev > 0; --lev) {
+        removedNodes.clear();
+        for (id_t i = 0; i < _data[lev].size(); ++i) {
+            // Check whether this node can be removed
+            if (!_data[lev][i].hasChildren()) {
+                removedNodes.insert(i);
+            }
+        }
+        // Then for the level above, update pointers
+        // NO THIS HAPPENS IN THE DAG. or does it?!
+        // todo: Remove all removedNodes from lev, update pointers in lev - 1
+        //  Maybe easier to loop over all nodes in lev - 1, only insert ones that have children
+        for (id_t i = 0; i < _data[lev-1].size(); ++i) {
+            for (int j = 0; j < 8; ++j) {
+                if (removedNodes.find(_data[lev - 1][i].children[j]) != removedNodes.end()) {
+                    _data[lev-1][i].unsetChildBit(j);
+                    _data[lev-1][i].children[j] = nullNode;
+                    nDelPtrs++;
+                }
+            }
+        }
+    }
+}
+
+/** Replaces all pointers to nodes without children with a null pointer */
 unsigned int GeomOctree::cleanEmptyNodes() {
 	std::set<id_t> emptyNodes;
 	unsigned int nDelPtrs = 0;

@@ -17,7 +17,7 @@
 //  FOR A PARTICULAR PURPOSE.
 //=============================================================
 
-// Triangle - Box tester (by Tomas Akenine-Möller
+// Triangle - Box tester (by Tomas Akenine-Mï¿½ller
 // see http://fileadmin.cs.lth.se/cs/Personal/Tomas_Akenine-Moller/code/)
 
 #pragma once
@@ -27,3 +27,4 @@
 
 bool planeBoxOverlap(const sl::vector3d normal, const sl::point3d vert, const double maxbox);
 bool testTriBox(const sl::point3d boxCenter, const double boxHalfSide, const sl::point3f *tri);
+sl::point3f closestPointOnTri(const sl::point3d p, const sl::point3f *triangle);

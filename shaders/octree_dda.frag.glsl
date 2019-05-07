@@ -426,7 +426,7 @@ void go_down_attr_root(in const Ray r, inout traversal_status ts, const int attr
 
 void go_down_one_level(in const Ray r, inout traversal_status ts) {
 	++ts.level;
-        ts.cell_size *= 0.5;
+	ts.cell_size *= 0.5;
 	
 	// Init ts idx, t_next_crossing, local_idx using octree point location
 	const vec3 p_a = r.o + ts.t_current * r.d;		
@@ -537,13 +537,11 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 	const float scale = 2.0 * rootHalfSide;
 	traversal_status ts;
 	ts.t_current = t_min_max.x;
-        init(r, ts);
+	init(r, ts);
 
-        // For attr dag: start at level 1, without modifying the ray/traversal status
+	// For attr dag: start at level 1, without modifying the ray/traversal status
+	go_down_attr_root(r, ts, attrBit);
 
-        go_down_attr_root(r, ts, attrBit);
-
-	
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);
 	do {

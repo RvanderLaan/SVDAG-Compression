@@ -94,6 +94,7 @@ private: ///////////// Private attributes
 	State _state;
 	Stats _stats;
 	sl::real_time_clock _clock;
+    std::vector<sl::uint8_t> attributes;
 
 public:
 	GeomOctree(Scene * scene);
@@ -112,6 +113,7 @@ public:
     void buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL, bool putMaterialIdInLeaves = true, char attrBit = 0);
     void buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL);
     void toAttrSVO();
+    void toAttrDAG();
     void toDAG(bool internalCall = false);
     void toLossyDAG(bool internalCall = false);
     unsigned int findAllDuplicateSubtrees();
@@ -130,6 +132,7 @@ public:
 
 private: // Internal tools
 	unsigned int cleanEmptyNodes();
+    void cleanEmptyAttrNodes();
 	void invertInvs(Node &n, int lev, bool inX, bool inY, bool inZ);
 
 };

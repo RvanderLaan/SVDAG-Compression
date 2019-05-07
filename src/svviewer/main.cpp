@@ -86,7 +86,6 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
 	if (key == GLFW_KEY_K) renderer->toggleRandomColors();
 
-
 }
 
 static sl::vector3f fromHomog(const sl::vector4f v) { return sl::vector3f(v[0] / v[3], v[1] / v[3], v[2] / v[3]); }

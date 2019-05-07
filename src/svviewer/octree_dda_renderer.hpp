@@ -57,7 +57,7 @@ public:
 	virtual void clearVoxel(int position);
     inline void setSelectedVoxelIndex(int i) { _selectedVoxelIndex = i; }
 	inline void toggleRandomColors() { _randomColors = !_randomColors; }
-    inline void setAttrBit(int i) { _attrBit = i; }
+    inline void setAttrBit(int i) { _attrBit = i; printf("Set attr bit %i\n", i); }
 
 	inline sl::aabox3f getSceneBBox() { return _encodedOctree->getSceneBBox(); }
 	inline void setEncodedOctree(EncodedOctree * eo) { ; }
