@@ -172,11 +172,11 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 				} else if (n == 1) { // just vertex info
 					itri.verticesIdx[i] = idxV - 1;
 					noNormal = true;
-                    itri.texCoordIdx[i] = -1; // texCoordIdx of -1 indicates that this triangle does not have a tex
+                    itri.texCoordIdx[i] = 0; // all texCoordIdx of 0 indicates that this triangle does not have a tex
 				} else if (n == 2 && hasNormWithoutTex) { // vertex and normal info
 					itri.verticesIdx[i] = idxV - 1;
 					if (!recomputeNormals) itri.normalsIdx[i] = idxN - 1;
-                    itri.texCoordIdx[i] = -1;
+                    itri.texCoordIdx[i] = 0;
                 } else if (n == 2) { // vertex and tex coord info
                     itri.verticesIdx[i] = idxV - 1;
                     if (loadMaterials) itri.texCoordIdx[i] = idxT - 1;

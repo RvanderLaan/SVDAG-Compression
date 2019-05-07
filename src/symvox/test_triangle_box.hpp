@@ -27,5 +27,6 @@
 
 bool planeBoxOverlap(const sl::vector3d normal, const sl::point3d vert, const double maxbox);
 bool testTriBox(const sl::point3d boxCenter, const double boxHalfSide, const sl::point3f *tri);
+float clamp(float n, float lower, float upper);
 sl::point3f closestPointOnTri(const sl::point3d p, const sl::point3f *triangle);
 void barycentric(sl::point3d p, const sl::point3f *tri, float &u, float &v, float &w);

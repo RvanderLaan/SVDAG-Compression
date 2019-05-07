@@ -28,7 +28,10 @@
 
 #include <CImg.h>
 
+#include <symvox/test_triangle_box.hpp>
+
 using namespace cimg_library;
+
 
 class Scene {
 public:
@@ -95,9 +98,9 @@ public:
         t2 = _texCoords[_indexedTris[idTri].texCoordIdx[2]];
     }
     inline bool isTriangleTextured(std::size_t idTri) {
-	    return _indexedTris[idTri].texCoordIdx[0] == -1
-	        ||  _indexedTris[idTri].texCoordIdx[1] == -1
-	        ||  _indexedTris[idTri].texCoordIdx[2] == -1;
+	    return _indexedTris[idTri].texCoordIdx[0] != 0
+	        && _indexedTris[idTri].texCoordIdx[1] != 0
+	        && _indexedTris[idTri].texCoordIdx[2] != 0;
 	}
     inline void getTexColor(const std::string texName, const sl::vector2f & uv, sl::color3f & c) {
 	    if (_textures.count(texName) == 0) {
@@ -107,16 +110,16 @@ public:
         auto texture = _textures[texName];
 	    int w = texture.width();
 	    int h = texture.height();
-	    int x = uv[0] * w;
-	    int y = uv[1] * h;
+	    int x = clamp(uv[0] * w, 0, w - 1);
+	    int y = clamp(uv[1] * h, 0, h - 1);
 	    // Todo: this assumes the texture is RGB
 	    unsigned char r = texture(x, y, 0);
 	    unsigned char g = texture(x, y, 1);
 	    unsigned char b = texture(x, y, 2);
 
-	    c[0] = (float) r;
-	    c[1] = (float) g;
-	    c[2] = (float) b; // todo: / 255?
+	    c[0] = ((float) r) / 255.0;
+	    c[1] = ((float) g) / 255.0;
+	    c[2] = ((float) b) / 255.0;
     }
 
 	void saveBinObj(std::string filename);
@@ -129,7 +132,7 @@ public:
 
 	inline void loadTextures(std::string path) {
 	    _textures.clear();
-	    for (auto material : _materials) {
+	    for (const auto & material : _materials) {
 	        std::string texName(material.texture);
 	        if (texName.size() > 3 && this->_textures.count(texName) == 0) {
 	            // TODO: Check if absolute or relative path - now assumes relative

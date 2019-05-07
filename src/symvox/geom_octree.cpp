@@ -234,7 +234,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     } else {
                         // If it's a leaf, do nothing unless we want attribute data here
                         if (putMaterialIdInLeaves) {
-                            float attr; // only 1 uint8 for now (gray scale), later we can add more channels
+                            sl::uint8_t attr; // only 1 uint8 for now (gray scale), later we can add more channels
 //                            node.children[i] = (id_t) triMatId;
 
 
@@ -260,11 +260,13 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 
                                 // Todo: try both for binary and for gray code
                                 attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
+
+//                                printf("Tri# %i: \tuv: %.2f \t%.2f \t - Attr: %.2f\n", iTri, voxTexCoords[0], voxTexCoords[1], f);
                             } else {
                                 // Todo: average rgb -> gray instead of just the red channel
                                 float f = materials[triMatId].diffuseColor[0];
                                 // If not textured, use diffuse color
-                                attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0)); // todo: * 256 or 255?
+                                attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
                             }
 
                             // Todo: For more than 1 attribute, use a vector of attributes
@@ -538,7 +540,7 @@ void GeomOctree::toAttrSVO() {
     // a bit annoying to set offsets correctly...
 
     // Remove nodes without children
-//    cleanEmptyNodes();
+    cleanEmptyNodes();
 
     // recompute NVoxels
     _nVoxels = 0;
