@@ -154,6 +154,17 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
 #endif
 }
 
+/*
+ * This function converts an unsigned binary
+ * number to reflected binary Gray code.
+ *
+ * The operator >> is shift right. The operator ^ is exclusive or.
+ */
+unsigned int BinaryToGray(unsigned int num)
+{
+    return num ^ (num >> 1);
+}
+
 void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves, char attrBit) {
 	
 	if (!internalCall) printf("* Building SVO... "); fflush(stdout);
@@ -264,9 +275,11 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                             float f = (color[0] + color[0] + color[0]) / 3.;
                             // Todo: try both for binary and for gray code
                             attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
+                            attr = BinaryToGray(attr);
 
                             // Todo: For more than 1 attribute, use a vector of attributes
                             // this->attributes.push_back(attr);
+
 
                             // For now, just put it in children
                             node.children[i] = (id_t) attr;

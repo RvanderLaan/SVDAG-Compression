@@ -529,7 +529,7 @@ void init(inout Ray r, inout traversal_status ts) {
 //	Z: num Iterations used.
 //      W: node index (-1 => no intersection)
 
-vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
+vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, const in int attr_bit) {
 	
 	if (!transform_ray(r, t_min_max))
 		return vec4(-4.0,0,0,-1); // out of scene Bbox
@@ -540,7 +540,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 	init(r, ts);
 
 	// For attr dag: start at level 1, without modifying the ray/traversal status
-	go_down_attr_root(r, ts, attrBit);
+	go_down_attr_root(r, ts, attr_bit);
 
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);
@@ -646,6 +646,7 @@ void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
 	Ray r = computeCameraRay(screenCoords);
 
+
 	// Todo: Ray cast 8 times (for each bit)
 	// Start at the i-th child instead of at the root
 
@@ -657,9 +658,26 @@ void main() {
 	}
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-	vec4 result = trace_ray(r, t_min_max, projectionFactor);
-	
-	if (result.x >= 0) // Intersection!!!
+	vec4 result = trace_ray(r, t_min_max, projectionFactor, randomColors ? 0 : attrBit);
+
+	int attr = 0;
+	if (result.x >= 0) {
+		attr |= 1 << 0;
+	}
+	if (randomColors) {
+		// Todo: Only count as intersection when they are intersecting the same position (the nearest one)
+		for (int i = 1; i < 8; ++i) {
+//			r = computeCameraRay(screenCoords);
+//			t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
+			vec4 result2 = trace_ray(r, t_min_max, projectionFactor, i);
+			if (result2.x >= 0) { // Intersection!!!
+				attr |= 1 << i;
+			}
+		}
+	}
+
+
+	if (attr > 0)
 	{
 		float t = 0;
 		if(viewerRenderMode == 0) // ITERATIONS
@@ -668,28 +686,32 @@ void main() {
 			t = result.x / length(sceneBBoxMax-sceneBBoxMin);
 		else if (viewerRenderMode == 2) // VOXEL LEVELS
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
-	
+
+		if (randomColors) {
+			t = (attr / 255.0);
+		}
 		color = vec3(t, t, t);
+
 
 		/////////////////////////////////
 		// CUSTOMIZED:
 		/////////////////////////////////
 		// Assign random colors based on the index of a node
-		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
-//			color *= randomColor(uint(result.w));
-			uint nodeIndex = uint(result.w);
-			vec3 randomColor = normalize(vec3(
-				(nodeIndex % 100) / 100.f,
-				((3 * nodeIndex) % 200) / 200.f,
-				((2 * nodeIndex) % 300) / 300.f
-			));
-			color *= randomColor;
-		} else if (result.w == selectedVoxelIndex) {
-			// Highlight selected voxel index with blue
-			color.r *= 0.5f;
-                        color.g *= 0.5f;
-			color.b = 1.f;
-		}
+//		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
+////			color *= randomColor(uint(result.w));
+//			uint nodeIndex = uint(result.w);
+//			vec3 randomColor = normalize(vec3(
+//				(nodeIndex % 100) / 100.f,
+//				((3 * nodeIndex) % 200) / 200.f,
+//				((2 * nodeIndex) % 300) / 300.f
+//			));
+//			color *= randomColor;
+//		} else if (result.w == selectedVoxelIndex) {
+//			// Highlight selected voxel index with blue
+//			color.r *= 0.5f;
+//                        color.g *= 0.5f;
+//			color.b = 1.f;
+//		}
 	}
 	else {
 		if (result.x == -4.) // no intersection, out of BBox => background
@@ -718,7 +740,7 @@ void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
 	Ray r = computeCameraRay(screenCoords);
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-	vec4 result = trace_ray(r, t_min_max, projectionFactor);
+	vec4 result = trace_ray(r, t_min_max, projectionFactor, attrBit);
 	if (result.x > 0) // Intersection!!!
 		output_t = result.xyz;
 	else
@@ -743,7 +765,7 @@ void main() {
 	r.d = normalize(lightToP);
 	vec2 t_min_max = vec2(0, lightToPLength);
 	const float projFactor = lightToPLength / cellSize;
-	vec4 result = trace_ray(r, t_min_max, projFactor);
+	vec4 result = trace_ray(r, t_min_max, projFactor, attrBit);
 
 	output_t = (result.x > 0) ? 0.0 : 1.0;
 }
@@ -777,7 +799,7 @@ void main() {
 	for(int i=0; i<numAORays; i++) {
 		aoRay.d = normalize(tnb *  hsSamples[(i+int(gl_FragCoord.x*gl_FragCoord.y))%N_HS_SAMPLES]);
 		//aoRay.d = normalize(tnb *  hsSamples[i]);
-		vec4 result = trace_ray(aoRay, t_min_max, projFactor);
+		vec4 result = trace_ray(aoRay, t_min_max, projFactor, attrBit);
 		if(result.x > 0) k += 1.0;// - (result.x/0.3);
 	}
 	float visibility = (numAORays>0) ? 1.0 - (k/float(numAORays)) : 1.0;
