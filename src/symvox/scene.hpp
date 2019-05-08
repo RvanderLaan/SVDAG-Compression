@@ -107,11 +107,12 @@ public:
 	        printf("Texture not found: '%s'\n", texName.c_str());
 	        return;
 	    }
-        auto texture = _textures[texName];
+        const auto& texture = _textures[texName];
 	    int w = texture.width();
 	    int h = texture.height();
 	    int x = clamp(uv[0] * w, 0, w - 1);
 	    int y = clamp(uv[1] * h, 0, h - 1);
+
 	    // Todo: this assumes the texture is RGB
 	    unsigned char r = texture(x, y, 0);
 	    unsigned char g = texture(x, y, 1);
@@ -132,11 +133,14 @@ public:
 
 	inline void loadTextures(std::string path) {
 	    _textures.clear();
+	    int matIndex = -1;
 	    for (const auto & material : _materials) {
+            ++matIndex;
+	        if (matIndex == 0) continue;
 	        std::string texName(material.texture);
 	        if (texName.size() > 3 && this->_textures.count(texName) == 0) {
 	            // TODO: Check if absolute or relative path - now assumes relative
-	            printf("Loading texture '%s'...\n", texName.c_str());
+	            printf("Loading texture '%s' of material '%s'...\n", texName.c_str(), material.name);
                 std::string texPath = path + "/" + texName;
                 std::replace(texPath.begin(), texPath.end(), '\\', '/');
                 CImg<unsigned char> texture(texPath.c_str());

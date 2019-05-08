@@ -179,6 +179,8 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 
     auto &materials = *_scene->getMaterials();
     float u, v, w; // barycentric coords
+    sl::vector3f color; // temp color container
+    sl::vector2f t0, t1, t2; // temp tex coord containers
 
 	if(!internalCall) _clock.restart();
 
@@ -233,41 +235,35 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                         queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
                     } else {
                         // If it's a leaf, do nothing unless we want attribute data here
-                        if (putMaterialIdInLeaves) {
+                        if (putMaterialIdInLeaves && node.children[i] == nullNode) {
                             sl::uint8_t attr; // only 1 uint8 for now (gray scale), later we can add more channels
 //                            node.children[i] = (id_t) triMatId;
 
-
-                            auto material = materials[triMatId];
+                            const auto& material = materials[triMatId];
                             std::string texName(material.texture);
 
                             // Check if triangle has texture
-                            if (this->_scene->isTriangleTextured(iTri) && texName != "") {
+                            if (this->_scene->isTriangleTextured(iTri) && !texName.empty()) {
                                 // Compute barycentric coordinates of the center of this voxel to this triangle
                                 barycentric(qi.center, _scene->getTrianglePtr(iTri), u, v, w);
 
                                 // Use that to find the texture coordinates of that point on the texture
-                                sl::vector2f t0, t1, t2;
                                 _scene->getTriangleTexCoords(iTri, t0, t1, t2);
                                 sl::vector2f voxTexCoords = u * t0 + v * t1 + w * t2;
 
                                 // Look up texture color at those coordinates
                                 // TODO: Use texture LOD or bigger sample size depending on size ratio of triangle to voxel
-                                sl::vector3f color;
                                 _scene->getTexColor(texName, voxTexCoords, color);
-
-                                float f = color[0];
-
-                                // Todo: try both for binary and for gray code
-                                attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
-
 //                                printf("Tri# %i: \tuv: %.2f \t%.2f \t - Attr: %.2f\n", iTri, voxTexCoords[0], voxTexCoords[1], f);
                             } else {
-                                // Todo: average rgb -> gray instead of just the red channel
-                                float f = materials[triMatId].diffuseColor[0];
-                                // If not textured, use diffuse color
-                                attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
+                                color = materials[triMatId].diffuseColor;
                             }
+
+
+                            // Average of RGB: Gray scale
+                            float f = (color[0] + color[0] + color[0]) / 3.;
+                            // Todo: try both for binary and for gray code
+                            attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
 
                             // Todo: For more than 1 attribute, use a vector of attributes
                             // this->attributes.push_back(attr);

@@ -24,6 +24,11 @@ PROJECT(SymVox)
 SET(SymVox_VERSION_MAJOR 0)
 SET(SymVox_VERSION_MINOR 1)
 
+############## Profiling
+#SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
+
+
 ############## Required Libraries
 
 SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake_modules" )
