@@ -540,7 +540,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, co
 	init(r, ts);
 
 	// For attr dag: start at level 1, without modifying the ray/traversal status
-	go_down_attr_root(r, ts, attr_bit);
+//	go_down_attr_root(r, ts, attr_bit);
 
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);

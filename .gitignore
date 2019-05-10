@@ -1,8 +1,13 @@
 bin/
 build/
+build32/
+build32-bak/
 
 sl-7.8.2-build/
+sl-7.8.2-build32/
 sl-7.8.2-Source/
+sl-7.8.2-install/
+
 
 models/
 

@@ -132,7 +132,8 @@ public:
 	void testOutput(std::string filename);
 
 	inline void loadTextures(std::string path) {
-	    _textures.clear();
+
+	    //_textures.clear();
 	    int matIndex = -1;
 	    for (const auto & material : _materials) {
             ++matIndex;

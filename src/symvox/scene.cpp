@@ -231,6 +231,9 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 				_nTris++;
 
                 // TODO: Fix texture coordinates for quads. Not dealing with this now, just assume the model is triangulated
+				if (loadMaterials) {
+					printf("This model has quads. Tex coords are currently not supported. Idk what will happen \n");
+				}
             }
 
 

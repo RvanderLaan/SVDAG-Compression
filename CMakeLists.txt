@@ -133,9 +133,6 @@ ADD_LIBRARY( symvox
 	src/symvox/octree_node.cpp
 	src/symvox/util.hpp
 	shaders/octree_dda.frag.glsl
-
-        src/symvox/octree_parser.hpp
-        src/symvox/octree_parser.cpp
 )
 
 TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
@@ -147,7 +144,14 @@ TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
 ADD_EXECUTABLE( svbuilder
 	src/svbuilder/main.cpp
 )
-TARGET_LINK_LIBRARIES(svbuilder symvox X11 m pthread)
+
+if(UNIX)
+    set(ADDITIONAL_LIBRARIES X11 m pthread) # X11 is needed for CImg (textures) in the builder
+else()
+    set(ADDITIONAL_LIBRARIES "")
+endif()
+
+TARGET_LINK_LIBRARIES(svbuilder symvox ${ADDITIONAL_LIBRARIES})
 
 #############################################################
 ####################### SYMVOX VIEWER ##########################
@@ -171,20 +175,20 @@ IF(BUILD_SVVIEWER)
 		src/svviewer/halton.hpp
 		src/svviewer/halton.cpp
 	)
+	
+	if(UNIX)
+		set(ADDITIONAL_LIBRARIES X11 Xxf86vm m Xinerama Xcursor rt pthread)
+	else()
+		set(ADDITIONAL_LIBRARIES "")
+	endif()
 
 	TARGET_LINK_LIBRARIES( svviewer 
 		symvox
 		${OPENGL_LIBRARIES}
 		${GLFW_LIBRARIES}
 		${GLEW_LIBRARIES}
-		X11
-		Xxf86vm
-		Xinerama
-		Xcursor
-		rt
-		m
-		pthread
 		${CMAKE_DL_LIBS}
+		${ADDITIONAL_LIBRARIES}
 	)
 
 ENDIF(BUILD_SVVIEWER)

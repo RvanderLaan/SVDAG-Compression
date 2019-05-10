@@ -117,9 +117,12 @@ bool testTriBox(const sl::point3d boxCenter, const double boxHalfSide, const sl:
 	sl::vector3d normal, e0, e1, e2;
 
 	sl::point3d triD[3];
-	triD[0] = sl::conv_to< sl::point3d >::from(tri[0]);
-	triD[1] = sl::conv_to< sl::point3d >::from(tri[1]);
-	triD[2] = sl::conv_to< sl::point3d >::from(tri[2]);
+	//triD[0] = sl::conv_to< sl::point3d >::from(tri[0]);
+	//triD[1] = sl::conv_to< sl::point3d >::from(tri[1]);
+	//triD[2] = sl::conv_to< sl::point3d >::from(tri[2]);
+	triD[0] = sl::point3d(tri[0][0], tri[0][1], tri[0][2]);
+	triD[1] = sl::point3d(tri[1][0], tri[1][1], tri[1][2]);
+	triD[2] = sl::point3d(tri[2][0], tri[2][1], tri[2][2]);
 
 	/* This is the fastest branch on Sun */
 	/* move everything so that the boxcenter is in (0,0,0) */
@@ -189,7 +192,8 @@ float clamp(float n, float lower, float upper) {
 
 /** From https://www.gamedev.net/forums/topic/552906-closest-point-on-triangle/ **/
 sl::point3f closestPointOnTri(const sl::point3d p, const sl::point3f *triangle) {
-    sl::vector3f pos = sl::conv_to<sl::vector3f>::from(p.as_vector());
+	//sl::vector3f pos = sl::conv_to<sl::vector3f>::from(p.as_vector());
+	sl::vector3f pos = sl::vector3f(p[0], p[1], p[2]);
 
     sl::vector3f edge0 = triangle[1] - triangle[0];
     sl::vector3f edge1 = triangle[2] - triangle[0];
@@ -267,9 +271,13 @@ sl::point3f closestPointOnTri(const sl::point3d p, const sl::point3f *triangle) 
 void barycentric(sl::point3d p, const sl::point3f *tri, float &u, float &v, float &w)
 {
     sl::point3d a, b, c;
-    a = sl::conv_to< sl::point3d >::from(tri[0]);
-    b = sl::conv_to< sl::point3d >::from(tri[1]);
-    c = sl::conv_to< sl::point3d >::from(tri[2]);
+    //a = sl::conv_to< sl::point3d >::from(tri[0]);
+    //b = sl::conv_to< sl::point3d >::from(tri[1]);
+    //c = sl::conv_to< sl::point3d >::from(tri[2]);
+
+	a = sl::point3d(tri[0][0], tri[0][1], tri[0][2]);
+	b = sl::point3d(tri[1][0], tri[1][1], tri[1][2]);
+	c = sl::point3d(tri[2][0], tri[2][1], tri[2][2]);
 
     sl::vector3d v0 = b - a, v1 = c - a, v2 = p - a;
     float d00 = v0.dot(v0);

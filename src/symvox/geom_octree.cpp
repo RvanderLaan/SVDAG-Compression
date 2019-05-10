@@ -169,7 +169,12 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 	
 	if (!internalCall) printf("* Building SVO... "); fflush(stdout);
 
-	_bbox = sl::conv_to<sl::aabox3f>::from(bbox);
+	//_bbox = sl::conv_to<sl::aabox3f>::from(bbox);
+	auto minD = bbox[0], maxD = bbox[1];
+	sl::point3f minF = sl::point3f(minD[0], minD[1], minD[2]);
+	sl::point3f maxF = sl::point3f(maxD[0], maxD[1], maxD[2]);
+	_bbox = sl::aabox3f(minF, maxF);
+
 	_levels = levels;
 	sl::vector3f sides =_bbox.half_side_lengths() * 2.0f;
 	_rootSide = sl::max(sl::max(sides[0], sides[1]), sides[2]);
@@ -231,19 +236,21 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     // Mark the child mask
                     node.setChildBit(i);
 
-                    if (qi.level < (_levels - 1)) {
-                        // If it's an internal node, and there is no child node inserted yet, insert a child node
-                        if (!node.existsChildPointer(i)) {
-                            node.children[i] = (id_t)_data[qi.level + 1].size();
-                            _data[qi.level + 1].emplace_back(qi.level + 1);
-                            _nNodes++;
-                            if (leavesCenters!=NULL && (qi.level == (_levels - 2))) {
-                                leavesCenters->push_back(childrenCenters[i]);
-                            }
-                        }
+					if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
+						// If it's an internal node, and there is no child node inserted yet, insert a child node
+						if (!node.existsChildPointer(i)) {
+							node.children[i] = (id_t)_data[qi.level + 1].size();
+							_data[qi.level + 1].emplace_back(qi.level + 1);
+							_nNodes++;
+							if (leavesCenters != NULL && (qi.level == (_levels - 2))) {
+								leavesCenters->push_back(childrenCenters[i]);
+							}
+						}
+					}
 
-                        // If this child is not a leaf, continue intersecting its children in a future iteration
-                        queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
+					if (qi.level + 1U < _levels) {
+						// If this child is not a leaf, continue intersecting its children in a future iteration
+						queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
                     } else {
                         // If it's a leaf, do nothing unless we want attribute data here
                         if (putMaterialIdInLeaves && node.children[i] == nullNode) {
@@ -1272,7 +1279,7 @@ void GeomOctree::toDAG(bool iternalCall) {
 			}
 		}
 
-        printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+        //printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
 
 		_data[lev].clear();
 		_data[lev].shrink_to_fit();

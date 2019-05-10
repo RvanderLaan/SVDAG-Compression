@@ -77,7 +77,7 @@ int main(int argc, char ** argv) {
 
   bool isLas = false;
   bool lossy = false;
-  bool isAttrOctree = true;
+  bool isAttrOctree = false;
 
   if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
     scene.loadObj(inputFile, true, isAttrOctree, false, false, true);
@@ -101,7 +101,11 @@ int main(int argc, char ** argv) {
 
   GeomOctree octree(&scene);
 
-  sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
+  //sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
+  auto minF = scene.getAABB()[0], maxF = scene.getAABB()[1];
+  sl::point3d minD = sl::point3d(minF[0], minF[1], minF[2]);
+  sl::point3d maxD = sl::point3d(maxF[0], maxF[1], maxF[2]);
+  sl::aabox3d sceneBBoxD = sl::aabox3d(minD, maxD);
 
   EncodedSVO svo;
   if (levelStep == 0) {
@@ -110,7 +114,7 @@ int main(int argc, char ** argv) {
             // Todo: Better performance would be: Put attributes in svo, turn into DAG, copy DAG for each attr bit, clean empty nodes
             // Now it's: Put material ID in SVO, copy SVO 8 times, turn all into DAG
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, true);
-            printf("Converting into attribute DAG...\n");
+            printf("Converting into attribute SVO...\n");
             octree.toAttrSVO();
         } else {
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
