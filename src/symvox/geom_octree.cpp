@@ -236,20 +236,19 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     // Mark the child mask
                     node.setChildBit(i);
 
-					if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
+					if (!node.existsChildPointer(i) && qi.level < (_levels - 1)) {
 						// If it's an internal node, and there is no child node inserted yet, insert a child node
-						if (!node.existsChildPointer(i)) {
-							node.children[i] = (id_t)_data[qi.level + 1].size();
-							_data[qi.level + 1].emplace_back(qi.level + 1);
-							_nNodes++;
-							if (leavesCenters != NULL && (qi.level == (_levels - 2))) {
-								leavesCenters->push_back(childrenCenters[i]);
-							}
+
+						node.children[i] = (id_t)_data[qi.level + 1].size();
+						_data[qi.level + 1].emplace_back(qi.level + 1);
+						_nNodes++;
+						if (leavesCenters != NULL && (qi.level == (_levels - 2))) {
+							leavesCenters->push_back(childrenCenters[i]);
 						}
 					}
 
-					if (qi.level + 1U < _levels) {
-						// If this child is not a leaf, continue intersecting its children in a future iteration
+					// If this child is not a leaf, continue intersecting its children in a future iteration
+					if ((qi.level + 1U) < _levels) {
 						queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
                     } else {
                         // If it's a leaf, do nothing unless we want attribute data here
