@@ -109,8 +109,8 @@ public:
 	inline virtual void * getData() { return (void *)&_data[0][0]; }
 
 	// Main methods
-    void buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox3d bbox, bool verbose = false);
-    void buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL, bool putMaterialIdInLeaves = false, char attrBit = 0);
+    void buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox3d bbox, bool verbose = false, bool isAttrDag = false);
+    void buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL, bool putMaterialIdInLeaves = false);
     void buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL);
     void toAttrSVO();
     void toAttrDAG();

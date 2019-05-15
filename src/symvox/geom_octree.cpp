@@ -165,7 +165,7 @@ unsigned int BinaryToGray(unsigned int num)
     return num ^ (num >> 1);
 }
 
-void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves, char attrBit) {
+void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves) {
 	
 	if (!internalCall) printf("* Building SVO... "); fflush(stdout);
 
@@ -327,7 +327,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
  * @param bbox
  * @param verbose
  */
-void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox3d bbox, bool verbose) {
+void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox3d bbox, bool verbose, bool isAttrDag) {
 	
 	printf("* Building DAG [stepLevel: %i]\n", stepLevel); fflush(stdout);
 	
@@ -339,10 +339,15 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	sl::time_duration timeStamp = _clock.elapsed();
 
 	printf("\t- Building root SVO subtree... ");
-	
-	buildSVO(stepLevels, bbox, true, &leavesCenters);
+
+	buildSVO(stepLevels, bbox, true, &leavesCenters, false);
 	
 	printf("OK! [%s]\n", sl::human_readable_duration(_clock.elapsed() - timeStamp).c_str()); fflush(stdout);
+
+
+	// TODO: Make 8 sub-roots (one for each attr bit) and a new root node, like toAttrDag
+	//toAttrSVO();
+
 
 	double lhs = getHalfSideD(stepLevels - 1);
 	sl::vector3d corners[8];
@@ -382,7 +387,17 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 				lbbox.to_empty();
 				lbbox.merge(leavesCenters[i]);
 				lbbox.merge(leavesCenters[i] + corners[j]);
-				leafOctree->buildSVO(levels - stepLevels, lbbox, true);
+
+				// Todo: Only include attributes if leaf octree contains leaves
+				leafOctree->buildSVO(levels - stepLevels, lbbox, true, NULL, isAttrDag);
+
+				if (isAttrDag) {
+					printf("\t\t- Converting into attribute SVO...\n");
+
+					// Todo: no need to make new root nodes: that is done earlier already
+					leafOctree->toAttrSVO();
+				}
+
 				size_t nNodesLeafSVO = leafOctree->getNNodes();
 				size_t nNodesLeafLastLevSVO = leafOctree->_data[leafOctree->_data.size() - 1].size();
 #pragma omp atomic
@@ -486,6 +501,8 @@ void GeomOctree::toAttrSVO() {
     // Given: An octree `oct` with material IDs as the children of the leaves
     // Later, we can put other attributes in the leaves as well
 
+	int numAttributes = 8;
+
     auto& materials = *_scene->getMaterials();
     unsigned int newLevels = _levels + 1;
     NodeData newData;
@@ -496,6 +513,10 @@ void GeomOctree::toAttrSVO() {
         root.children[i] = i;
     }
     newData[0].push_back(root);
+
+	for (int i = 1; i < newLevels; ++i) {
+		newData[i].reserve(_data[i - 1].size() * numAttributes);
+	}
 
     unsigned int nNodesCount = 1;
 

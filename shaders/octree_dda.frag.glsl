@@ -540,10 +540,10 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, co
 	init(r, ts);
 
 	// For attr dag: start at level 1, without modifying the ray/traversal status
-//	go_down_attr_root(r, ts, attr_bit);
+	go_down_attr_root(r, ts, attr_bit);
 
 	int iteration_count = 0;
-	const uint max_level = min(INNER_LEVELS, drawLevel-1);
+	const uint max_level = min(INNER_LEVELS - 1, drawLevel-1); // remove -1 at INNER_LEVELS when not descending attr root
 	do {
 		bool full_voxel = fetch_voxel_bit(ts);
 	  
@@ -666,14 +666,20 @@ void main() {
 	}
 	if (randomColors) {
 		// Todo: Only count as intersection when they are intersecting the same position (the nearest one)
+		// probably requires one extra attr bit, that is the original DAG containing all geometry
 		for (int i = 1; i < 8; ++i) {
+			// Todo: reset stack?
+//			stack_size = 0;
 //			r = computeCameraRay(screenCoords);
 //			t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-			vec4 result2 = trace_ray(r, t_min_max, projectionFactor, i);
-			if (result2.x >= 0) { // Intersection!!!
+			result = trace_ray(r, t_min_max, projectionFactor, i);
+			if (result.x >= 0) { // Intersection!!!
 				attr |= 1 << i;
 			}
 		}
+		float t = (attr / 255.0);
+		color = vec3(t, t, t);
+		return;
 	}
 
 
@@ -687,9 +693,6 @@ void main() {
 		else if (viewerRenderMode == 2) // VOXEL LEVELS
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
 
-		if (randomColors) {
-			t = (attr / 255.0);
-		}
 		color = vec3(t, t, t);
 
 

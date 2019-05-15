@@ -77,7 +77,7 @@ int main(int argc, char ** argv) {
 
   bool isLas = false;
   bool lossy = false;
-  bool isAttrOctree = false;
+  bool isAttrOctree = true;
 
   if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
     scene.loadObj(inputFile, true, isAttrOctree, false, false, true);
@@ -130,7 +130,7 @@ int main(int argc, char ** argv) {
     }
   }
   else {
-    octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
+    octree.buildDAG(nLevels, levelStep, sceneBBoxD, true, isAttrOctree);
   }
 
 
