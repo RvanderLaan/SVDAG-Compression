@@ -44,6 +44,7 @@ Scene::Scene() {
 
 	TMaterial defaultMat;
     sprintf(defaultMat.name, "Voxelator Default Mat");
+    sprintf(defaultMat.texture, "");
 	defaultMat.ambientColor = sl::color3f(0.1, 0.1, 0.1);
 	defaultMat.diffuseColor = sl::color3f(0.9, 0.9, 0.9);
 	defaultMat.specColor = sl::color3f(0.2, 0.2, 0.2);
@@ -341,6 +342,7 @@ bool Scene::loadObjMtlLib(std::string fileName) {
 		}
         else if (cmd == "map_Kd") { // diffuse texture
             ss >> tmp;
+            // Todo: Take into account arguments (e.g. map_Kd -bm 0.55 tex.jpg)
             strcpy(mat->texture, tmp.c_str());
         }
 	}
