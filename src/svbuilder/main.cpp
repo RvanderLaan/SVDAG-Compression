@@ -146,7 +146,7 @@ int main(int argc, char ** argv) {
     EncodedSSVDAG psvdag;
 //    psvdag.encode(octreeCopy);
 
-    bool saveAll = true;
+    bool saveAll = false;
 
     if (saveAll) {
         std::string path = sl::pathname_directory(inputFile);
