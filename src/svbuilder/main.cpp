@@ -128,7 +128,7 @@ int main(int argc, char ** argv) {
 
 //	GeomOctree octreeCopy = octree;
 
-    // octree.findAllDuplicateSubtrees();
+     octree.findAllDuplicateSubtrees();
 
     if (!lossy) {
         octree.toSDAG(false, false);

@@ -592,7 +592,7 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
             }
 
             lossyUniqueNodes.shrink_to_fit();
-            printf("\t-> Lossy %lu \t(%.2f\%%)\n", lossyUniqueNodes.size(), (lossyUniqueNodes.size() / float(uniqueNodes.size())) * 100.0);
+            printf("\t-> Lossy %lu \t(%.2f%%)\n", lossyUniqueNodes.size(), (lossyUniqueNodes.size() / float(uniqueNodes.size())) * 100.0);
             _data[lev] = lossyUniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
         } else {
             _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
@@ -662,7 +662,7 @@ bool GeomOctree::compareSubtrees(unsigned int levA, unsigned int levB, Node &nA,
         Node &cB = _data[childLevB][nB.children[i]];
 
         // Add child node to the set of unique nodes in the subtree of node A
-        nodesInSubtree[levA].insert(nA.children[i]);
+        nodesInSubtree[levA + 1].insert(nA.children[i]);
 
         // Now compare the subtrees of these children - only if they are not equal, we can immediately return
         if (!this->compareSubtrees(childLevA, childLevB, cA, cB, nodesInSubtree)) {
@@ -794,7 +794,7 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
     // - - - (Use mapping [oldIndex, newIndex] per level to redirect the pointers)
 
     for (; levA < _levels; ++levA) {
-        printf("Comparing level %u\n", levA);
+        printf(" - Comparing level %u... \n", levA);
 
         // For all nodes to be checked...
         for (id_t &idA : currentNodesToCheck) {
@@ -808,7 +808,8 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
                     std::vector<std::set<id_t>> nodesInCurSubtree(_levels);
 
                     // Brute force check equality of subtrees of nA and nB
-                    bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
+                    bool areSubtreesEqual = false; // compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
+                    // Todo: It's set to false since there's a bug even when nothing should be happening, somewhere in updating the pointers probably...
 
                     if (areSubtreesEqual) {
                         foundMatch = true;
@@ -819,7 +820,8 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
                         subtreeCorrespondences[levA][idA] = std::make_pair(levB, j);
 
                         // Append all nodes in this subtree to the nodes that can be removed
-                        for (int levRem = 0; levRem < _levels; ++levRem) {
+                        removableNodesPerLevel[levA].insert(idA); // subtree root
+                        for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
                             removableNodesPerLevel[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
                         }
 
@@ -839,6 +841,8 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
                 }
             }
         }
+
+        printf("   - Reduced from %lu to %lu nodes\n", _data[levA].size(), _data[levA].size() - removableNodesPerLevel[levA].size());
 
         // Since children of a node may also be children of other nodes in a DAG,
         // we need to ensure children are only present once to the nextNodesToCheck vector
@@ -914,7 +918,7 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
         // now we can assemble the node data for this level without those nodes
         std::vector<Node> uniqueNodes(_data[lev].size() - removableNodesPerLevel[lev].size());
 
-        std::vector<id_t> correspondences; // normal correspondences for this level (old index -> new index) for those that are not removed
+        std::vector<id_t> correspondences(_data[lev].size()); // normal correspondences for this level (old index -> new index) for those that are not removed
 
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
             // insert all nodes in uniqueNodes that are not in removableNodesPerLevel of this level
@@ -927,13 +931,12 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
         // Replace node data for this level
         _data[lev].clear();
         _data[lev].shrink_to_fit();
-        uniqueNodes.shrink_to_fit();
         _data[lev] = uniqueNodes;
         _data[lev].shrink_to_fit();
-        _nNodes += _data[lev].size(); // todo: reset to 0 before this loop
+        _nNodes += _data[lev].size();
 
         // Update all pointers in the level above
-        for (id_t nodeIndex = 0;nodeIndex < _data[lev-1].size(); ++nodeIndex) {
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev-1].size(); ++nodeIndex) {
             Node *node = &_data[lev - 1][nodeIndex];
             // For all children...
             for (int j = 0; j < 8; j++) {
@@ -967,7 +970,7 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
         totalElimSubtrees += subtreeCorrespondences[i].size();
         id_t origSize = _data[i].size() + removableNodesPerLevel[i].size();
         double pct = 100 * (removableNodesPerLevel[i].size() / double(origSize));
-        printf("- Level %u:   \t%zu subtrees are equal to a subtree higher up. %zu / %i (%.2f%%) nodes of this level have been removed\n", i, subtreeCorrespondences[i].size(), removableNodesPerLevel[i].size(), origSize, pct);
+        printf(" - Level %u:   \t%zu subtrees are equal to a subtree higher up. %zu / %i (%.2f%%) nodes of this level have been removed\n", i, subtreeCorrespondences[i].size(), removableNodesPerLevel[i].size(), origSize, pct);
     }
     printf("Total subtrees equal: %u / %zu (%.2f%%)\n", totalElimSubtrees, _nNodes, (100 * numEqualSubtrees / double(_nNodes)));
     printf("Total number of nodes that was removed: %u / %zu (%.2f%%)\n ", totalElimNodes, _nNodes, (100 * totalElimNodes / double(_nNodes)));
@@ -1155,7 +1158,7 @@ void GeomOctree::toDAG(bool iternalCall) {
 
     // For every level, starting at the leaves...
 	for (unsigned int lev = _levels - 1; lev > 0; --lev) {
-        // Clear the lists used to keep track of correspondeces etc
+        // Clear the lists used to keep track of correspondences etc
 		size_t oldLevSize = _data[lev].size();
 		uniqueNodes.clear();
 		uniqueNodes.shrink_to_fit();
