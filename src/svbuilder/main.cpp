@@ -126,9 +126,14 @@ int main(int argc, char ** argv) {
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
 
-    octree.findAllDuplicateSubtrees();
+//	GeomOctree octreeCopy = octree;
 
-    if (!lossy) octree.toSDAG();
+    // octree.findAllDuplicateSubtrees();
+
+    if (!lossy) {
+        octree.toSDAG(false, false);
+//        octreeCopy.toSDAG(false, true);
+    }
 
 //    octree.findAllSymDuplicateSubtrees();
 
@@ -138,21 +143,42 @@ int main(int argc, char ** argv) {
 	EncodedSSVDAG ssvdag;
 	ssvdag.encode(octree);
 
-	for (int i = 4; i < argc; ++i) {
-		std::string outputFile = argv[i];
-		if     (strstr(outputFile.c_str(), ".svo") || strstr(outputFile.c_str(), ".SVO")) {
-			if (levelStep == 0) svo.save(outputFile);
-		}
-		else if (strstr(outputFile.c_str(), ".svdag") || strstr(outputFile.c_str(), ".SVDAG")) {
-			svdag.save(outputFile);
-		}
-		else if (strstr(outputFile.c_str(), ".ussvdag") || strstr(outputFile.c_str(), ".USSVDAG")) {
-			ussvdag.save(outputFile);
-		}
-		else if (strstr(outputFile.c_str(), ".ssvdag") || strstr(outputFile.c_str(), ".SSVDAG")) {
-			ssvdag.save(outputFile);
-		}
-	}
+    EncodedSSVDAG psvdag;
+//    psvdag.encode(octreeCopy);
+
+    bool saveAll = true;
+
+    if (saveAll) {
+        std::string path = sl::pathname_directory(inputFile);
+        std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
+
+        std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
+
+        svo.save(basePath + ".svo");
+        svdag.save(basePath + ".svdag");
+        ussvdag.save(basePath + ".ussvdag");
+        ssvdag.save(basePath + ".ssvdag");
+//        psvdag.save(basePath + ".psvdag");
+    } else {
+        for (int i = 4; i < argc; ++i) {
+            std::string outputFile = argv[i];
+            if     (strstr(outputFile.c_str(), ".svo") || strstr(outputFile.c_str(), ".SVO")) {
+                if (levelStep == 0) svo.save(outputFile);
+            }
+            else if (strstr(outputFile.c_str(), ".svdag") || strstr(outputFile.c_str(), ".SVDAG")) {
+                svdag.save(outputFile);
+            }
+            else if (strstr(outputFile.c_str(), ".ussvdag") || strstr(outputFile.c_str(), ".USSVDAG")) {
+                ussvdag.save(outputFile);
+            }
+            else if (strstr(outputFile.c_str(), ".ssvdag") || strstr(outputFile.c_str(), ".SSVDAG")) {
+                ssvdag.save(outputFile);
+            }
+            else if (strstr(outputFile.c_str(), ".psvdag") || strstr(outputFile.c_str(), ".PSVDAG")) {
+                psvdag.save(outputFile);
+            }
+        }
+    }
 
 	sl::time_duration totalTime = ck.elapsed();
 
@@ -171,6 +197,7 @@ int main(int argc, char ** argv) {
 	printf("Encoded SVDAG      : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svdag.getDataSize()).c_str(),   (8 * svdag.getDataSize())   / float(octree.getNVoxels()));
 	printf("Encoded USSVDAG    : %s\t(%.3f bits/vox)\n", sl::human_readable_size(ussvdag.getDataSize()).c_str(), (8 * ussvdag.getDataSize()) / float(octree.getNVoxels()));
 	printf("Encoded SSVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(ssvdag.getDataSize()).c_str(), (8 * ssvdag.getDataSize()) / float(octree.getNVoxels()));
+	printf("Encoded PSVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(psvdag.getDataSize()).c_str(), (8 * psvdag.getDataSize()) / float(octree.getNVoxels()));
 	printf("SSVDAG / DAG       : %.1f %%\n", 100.f * ssvdag.getDataSize() / (float)svdag.getDataSize());
 	printf("SSVDAG / SVO       : %.1f %%\n", 100.f * ssvdag.getDataSize() / (float)stats.nNodesSVO);
 	printf("SVO->SVDAG time    : %s\n", sl::human_readable_duration(stats.toDAGTime).c_str());

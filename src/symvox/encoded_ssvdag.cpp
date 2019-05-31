@@ -247,7 +247,7 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 		hist.resize(octData[lev].size());
 		hist.shrink_to_fit();
 
-		// refs inizialization to ordered indices and zeros
+		// refs initialization to ordered indices and zeros
 		for (GeomOctree::id_t i = 0; i < octData[lev].size(); ++i) {
 			hist[i].first = i; // idx
 			hist[i].second = 0; // num of refs
@@ -259,7 +259,7 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 				for (int c = 0; c < 8; ++c)
 					if (n.existsChildPointer(c)) hist[n.children[c]].second++;
 
-			// sort by number of references (c++11's lambdas r00lez)
+			// sort by number of references (c++11's lambdas r00lez) ;D
 			std::sort(hist.begin(), hist.end(),
 				[](std::pair< GeomOctree::id_t, GeomOctree::id_t > a, std::pair< GeomOctree::id_t, GeomOctree::id_t> b) { return a.second > b.second; }
 			);
@@ -268,6 +268,9 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 		std::vector<GeomOctree::id_t> newIndirection(octData[lev].size());
 
 		if (lev == _levels - 2) { // LEAVES (two last levels, 4^3)
+
+		    // Why last 2 levels instead of 1?
+		    // - such a level (2^3) of granularity leads to a high structure overhead.
 
 			_dataLeaves.resize(hist.size() * 8);
 			sl::uint8_t buf[8];
@@ -305,6 +308,7 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 					memset(new_buf, 0, 8);
 
 					// Shuffle bytes and bits to store bits in matrix row order
+					// Todo: ???
 					sl::uint8_t byte_pos = 0;
 					sl::uint8_t bit_pos = 0;
 					sl::uint8_t output_offset = 0;
@@ -342,7 +346,7 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 
 				sl::uint16_t tmpEncNode[100];
 
-				// tmpEncNode[0..1] <- inizializate to zero
+				// tmpEncNode[0..1] <- initialize to zero
 				tmpEncNode[0] = 0;
 
 				int tmpNodeSize = 1;
@@ -391,7 +395,6 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 						}
 						else {
 							std::cerr << "ERRROR Unsupported pointer sz " << childAddress << " > 2^30 " << (1U << 30) << std::endl;
-
 						}
 
 						if (check_decode_enabled_ &&
@@ -445,7 +448,7 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 	_encodingTime = _clock.elapsed();
 	printf("OK! [%s]\n", sl::human_readable_duration(_encodingTime).c_str());
 
-#if 0 // Debug output, with type of pointers for level
+#if 1 // Debug output, with type of pointers for level
 	for (int i = 0; i < levelsStats.size(); ++i) {
 		printf("\t-Level %2i:  Ptr16:%12zu\tPtr28:%12zu\tPtr29:%12zu\n", i, levelsStats[i].nPtr16b, levelsStats[i].nPtr28b, levelsStats[i].nPtr29b);
 	}

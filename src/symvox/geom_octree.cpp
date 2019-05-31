@@ -1192,7 +1192,7 @@ void GeomOctree::toDAG(bool iternalCall) {
 }
 
 
-void GeomOctree::toSDAG(bool internalCall) {
+void GeomOctree::toSDAG(bool internalCall, bool skipSymmetry) {
 
 	if (!internalCall) {
 		if (_state == S_SVO) {
@@ -1237,6 +1237,18 @@ void GeomOctree::toSDAG(bool internalCall) {
 			Node n = _data[lev][i];
 			if (!n.hasChildren()) continue; // skip empty nodes
 
+			if (skipSymmetry) { // Used when we only want pointer compression
+                uniqueNodesChecker[n] = (id_t)uniqueNodes.size();
+                correspondences[i] = MirroredNode(false, false, false, id_t(uniqueNodes.size()));
+                uniqueNodes.push_back(n);
+                continue;
+			}
+
+            // Check invariances
+            if (n == n.mirror(true, false, false)) n.setInvariantBit(0);
+            if (n == n.mirror(false, true, false)) n.setInvariantBit(1);
+            if (n == n.mirror(false, false, true)) n.setInvariantBit(2);
+
             // Create mirrored versions of this node
             Node niX = n.mirror(true, false, false);
             Node niY = n.mirror(false, true, false);
@@ -1246,12 +1258,6 @@ void GeomOctree::toSDAG(bool internalCall) {
             Node niYZ = niY.mirror(false, false, true);
             Node niXYZ = niXY.mirror(false, false, true);
 
-			// Check invariances
-            if (n == niX) n.setInvariantBit(0);
-            if (n == niY) n.setInvariantBit(1);
-            if (n == niZ) n.setInvariantBit(2);
-
-			// Check children invariances
             // If a child is invariant on an axis, this removes the mirror bit there
 			if (lev < (_levels - 1)) {
 				invertInvs(niX, lev, true, false, false);

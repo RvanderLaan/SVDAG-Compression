@@ -196,6 +196,10 @@ int main(int argc, char ** argv)
 		encoded_octree = new EncodedSSVDAG();
 		if (!encoded_octree->load(inputFile)) incorrectFile = true;
 	}
+    else if (ext == "psvdag" || ext == "PSVDAG") {
+        encoded_octree = new EncodedSSVDAG();
+        if (!encoded_octree->load(inputFile)) incorrectFile = true;
+    }
 	else 
 		incorrectFile = true;
 

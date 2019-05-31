@@ -118,7 +118,7 @@ public:
     bool compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, std::set<Node>& nodesInSubtree);
     bool compareSymSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, bool sX, bool sY, bool sZ);
     void removeSubtreeAndUpdatePointers(unsigned int levA, unsigned int levB, Node &nA, Node &nB);
-    void toSDAG(bool internalCall = false);
+    void toSDAG(bool internalCall = false, bool skipSymmetry = false);
 	void toSDAGCanonical();
 
 	// External tools
