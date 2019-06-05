@@ -625,9 +625,13 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
 }
 
 /** Recursive subtree comparison **/
-bool GeomOctree::compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, std::vector<std::set<id_t>> &nodesInSubtree) {
-//    printf("%u, %u\n", levA, levB);
-
+bool GeomOctree::compareSubtrees(
+        unsigned int levA,
+        unsigned int levB,
+        Node &nA,
+        Node &nB,
+        std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> &nodesInSubtree
+) {
     // If B terminates before A, they are not equal since one or more levels are lost
     if (nA.hasChildren() && !nB.hasChildren()) {
         return false;
@@ -662,7 +666,7 @@ bool GeomOctree::compareSubtrees(unsigned int levA, unsigned int levB, Node &nA,
         Node &cB = _data[childLevB][nB.children[i]];
 
         // Add child node to the set of unique nodes in the subtree of node A
-        nodesInSubtree[levA + 1].insert(nA.children[i]);
+        nodesInSubtree[childLevA][nA.children[i]] = std::make_pair(childLevB, nB.children[i]); // stores the correspondence between these two nodes
 
         // Now compare the subtrees of these children - only if they are not equal, we can immediately return
         if (!this->compareSubtrees(childLevA, childLevB, cA, cB, nodesInSubtree)) {
@@ -728,11 +732,11 @@ bool GeomOctree::compareSymSubtrees(unsigned int levA, unsigned int levB, Node &
 }
 
 /**
- * @brief findAllDuplicateSubtrees Brute force search over all levels, looking for equal subtrees
+ * @brief mergeAcrossAllLevels Brute force search over all levels, looking for equal subtrees and merging them
  * Goal: Research to see what the benefit of multi-level merging would be.
  * Just for SVDAGs now, but SSVDAGs would likely perform better - harder to check though
  */
-unsigned int GeomOctree::findAllDuplicateSubtrees() {
+unsigned int GeomOctree::mergeAcrossAllLevels() {
     /////////////////////////////////
     /// Finding identical subtrees //
     /////////////////////////////////
@@ -753,7 +757,6 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
     // This way, the matches are found as early as possible
     unsigned int levA = 1;
     for (id_t i = 0; i < _data[levA].size(); i++) {
-//        Node &n = _data[levA][i];
         currentNodesToCheck.push_back(i);
     }
 
@@ -765,36 +768,18 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
 
     // We need to store the correspondences of one subtree to another:
     // Contains for each level, a map of node IDs that point to level and index of an identical subtree higher-up in the graph.
-    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> subtreeCorrespondences(_levels); // store roots of identical subtrees
-    std::vector<std::set<id_t>> removableNodesPerLevel(_levels); // store all nodes in removable subtrees
+    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> subtreeCorrespondences(_levels); // store correspondences across different levels
 
-
-    // The level of each child pointer is defined in node.childLevels[k]
+    // The level of each child pointer is set in node.childLevels[k]
     // then at the end, replace the node data in each level in those subtrees
-    // q: take into account when a larger subtree is found than an earlier subtree of that subtree
-    // a: The larger subtree is always found first, since duplicate subtrees are found top-down
+
+    // The larger subtree is always found first, since duplicate subtrees are found top-down
 
     // Algorithm for removing duplicates so that indices don't get messed up:
-    // - Idea: Same way as toDAG: Keep track of correspondeces, replace data of whole level at one time
-
-    ////////////////// Pseudocode: //////////////////
-    // From top to bottom:                                                  VVV
-    // - Find duplicate subtrees
-    // - - If found, mark root of subtrees in set of correspondences
-    // - - Keep track of nodes in in all removable subtrees
-    // From bottom to top:
-    // - Replace level with the level without nodes that can be eliminated
-    // - - (Store mapping of [oldIndex -> newIndex])
-    // - Update pointers in level above to the remaining nodes
-    // - - (Leave pointers to deleted nodes as-is, the index of the subtree higher-up might change...)
-    // - - - or not? since the highest identical subtree will always be found first, right?
-    // For every level (top-down)
-    // - Replace pointers of parents of deleted nodes to the corresponding subtree higher-up
-    // - - (How to find the parents of deleted nodes? Cached somewhere?)
-    // - - - (Use mapping [oldIndex, newIndex] per level to redirect the pointers)
+    // - Idea: Same way as toDAG: Keep track of correspondences, replace data of whole level at one time bottom-up
 
     for (; levA < _levels; ++levA) {
-        printf(" - Comparing level %u... \n", levA);
+        printf(" - Comparing level %u  (%zu / %zu to check) \n", levA, currentNodesToCheck.size(), _data[levA].size());
 
         // For all nodes to be checked...
         for (id_t &idA : currentNodesToCheck) {
@@ -802,14 +787,13 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
             bool foundMatch = false;
             for (unsigned int levB = 0; levB < levA; ++levB) {
                 // For all nodes in the other level above A...
-                for (id_t j = 0; j < _data[levB].size(); j++) {
+                for (id_t j = 0; j < _data[levB].size(); ++j) {
                     numTotalComparisons++;
                     Node &nB = _data[levB][j];
-                    std::vector<std::set<id_t>> nodesInCurSubtree(_levels);
+                    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> nodesInCurSubtree(_levels);
 
                     // Brute force check equality of subtrees of nA and nB
-                    bool areSubtreesEqual = false; // compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
-                    // Todo: It's set to false since there's a bug even when nothing should be happening, somewhere in updating the pointers probably...
+                    bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
 
                     if (areSubtreesEqual) {
                         foundMatch = true;
@@ -820,9 +804,9 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
                         subtreeCorrespondences[levA][idA] = std::make_pair(levB, j);
 
                         // Append all nodes in this subtree to the nodes that can be removed
-                        removableNodesPerLevel[levA].insert(idA); // subtree root
+                        nodesInCurSubtree[levA][idA] = std::make_pair(levB, j); // root node correspondence
                         for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
-                            removableNodesPerLevel[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
+                            subtreeCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
                         }
 
                         break;
@@ -834,6 +818,7 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
             }
             if (!foundMatch) {
                 // If no match was found, try to find duplicate subtrees for all child nodes in the next iteration
+                // Todo: This makes it brute force, is kinda expensive. Is there a more efficient way do fewer comparisons?
                 for (int i = 0; i < 8; ++i) {
                     if (nA.existsChild(i)) {
                         nextNodesToCheck.push_back(nA.children[i]);
@@ -842,18 +827,27 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
             }
         }
 
-        printf("   - Reduced from %lu to %lu nodes\n", _data[levA].size(), _data[levA].size() - removableNodesPerLevel[levA].size());
+        printf("   - Reduced from %lu to %lu nodes\n", _data[levA].size(), _data[levA].size() - subtreeCorrespondences[levA].size());
 
         // Since children of a node may also be children of other nodes in a DAG,
         // we need to ensure children are only present once to the nextNodesToCheck vector
         // Todo: Make it a map? Ensures entries are added only once
         std::sort(nextNodesToCheck.begin(), nextNodesToCheck.end() );
-        nextNodesToCheck.erase(std::unique(nextNodesToCheck.begin(), nextNodesToCheck.end() ), nextNodesToCheck.end());
+        nextNodesToCheck.erase(
+                std::unique(nextNodesToCheck.begin(), nextNodesToCheck.end()),
+                nextNodesToCheck.end());
 
         // After all nodes for this level have been checked, swap the current and next nodes to check
         currentNodesToCheck.clear();
         currentNodesToCheck.swap(nextNodesToCheck);
     }
+
+    // TODO: CURRENT PROBLEM:
+    // When a subtree is removed, only the root correspondence is stored
+    // There could be many more pointers to nodes in that subtree, that now point to nothing
+    // Solution: correspondences for all removableNodes
+    // -> post fix: removableNodes is gone, all correspondences to other levels are stored in subtreeCorrespondences
+    // -> should rename subtreeCorrespondences to multiLevelCorrespondences?
 
 
     ///////////////////////////////////
@@ -861,68 +855,13 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
     ///////////////////////////////////
     // Now that all identical subtrees have been identified, the duplicate subtrees can be removed and the pointers to them should be updated.
     for (unsigned int lev = _levels - 1; lev > 0; --lev) {
-        /*
-//        // - Identify the nodes in the subtrees that can be eliminated in this level
-//        std::vector<std::pair<unsigned int, id_t>> correspondences;
-//        for (unsigned int levUp = 0; levUp > lev; levUp++) {
-//            // All correspondences will have nodes at any level below them, so loop over the subtreeCorrespondeces in all levels
-//            for (auto const& k : subtreeCorrespondences[levUp]) {
-//                //Maybe more efficient to do this as an outer loop, keep track of nodesToBeRemoved for each level
-//                // but then we might as well do that in the previous section...
-//                // if we do that tho, we do not know with which node it can be replaced
-//                // and the nodes in higher level might move to different indices...
-//
-//                id_t nodeUpIndex = k.first; // this is the root of of a subtree that can be replaced with another subtree; k.second
-//                std::vector<id_t> currentChildren;
-//                std::vector<id_t> nextChildren;
-//                currentChildren.push_back(nodeUpIndex);
-//
-//                // Go down until nodes at level lev are reached
-//                for (unsigned int levTemp = levUp; levTemp < lev; ++levTemp) {
-//                    for (id_t &c : currentChildren) {
-//                        for (unsigned int i = 0; i < 8; ++i) {
-//                            if (_data[levTemp + 1][c].existsChild(i)) {
-//                                nextChildren.push_back(_data[levTemp + 1][c].children[i]);
-//                            }
-//                        }
-//                    }
-//                    currentChildren.clear();
-//                    currentChildren.swap(nextChildren);
-//                }
-//
-//                // Now nextChildren contains the ids of the nodes in the subtrees that can be removed
-//                // but we don't know their correspondeces ARGHGHGHH
-////                correspondences.emplace_back()
-//            }
-//        }
-         */
-        // This sucks. Too complex.
-        // Maybe write a helper class/function that returns the pairs of identical nodes at two levels given a level
-
-        /**
-          Things I miss in c++ from java/typescript
-          * Being able to reference a local variable with a shorter name, e.g. "int[] c = _data[lev - 1][i].children"
-          * header+source files:
-          * * Can't easily refactor code by extracing it to a new function: Need to define it twice in different files
-          * Compiling
-          * * You can't just add new files, they need to be added to CMakeLists.txt to get them recognised
-          *
-          * Unintuitive std library: find function, several push/insert/emplace functions.
-          * QtCreator doesn't show useful tooltip/popup information. Only confuses me more. Also hundreds of warnings.
-          *
-          * these things make me write terrible code. Huge files. huge complex functions.
-          */
-
-
-        // New idea: make one big list of all nodes that can be removed per level
-        // now we can assemble the node data for this level without those nodes
-        std::vector<Node> uniqueNodes(_data[lev].size() - removableNodesPerLevel[lev].size());
+        std::vector<Node> uniqueNodes(_data[lev].size() - subtreeCorrespondences[lev].size());
 
         std::vector<id_t> correspondences(_data[lev].size()); // normal correspondences for this level (old index -> new index) for those that are not removed
 
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
             // insert all nodes in uniqueNodes that are not in removableNodesPerLevel of this level
-            if (removableNodesPerLevel[lev].find(nodeIndex) == removableNodesPerLevel[lev].end()) {
+            if (subtreeCorrespondences[lev].find(nodeIndex) == subtreeCorrespondences[lev].end()) {
                 correspondences[nodeIndex] = uniqueNodes.size();
                 uniqueNodes.push_back(_data[lev][nodeIndex]);
             }
@@ -943,8 +882,8 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
                 // If this child exists...
                 if (node->existsChild(j)) {
                     // If it was replaced by a subtree higher up
-                    auto it = subtreeCorrespondences[lev-1].find(node->children[j]);
-                    if (it != subtreeCorrespondences[lev-1].end()) {
+                    auto it = subtreeCorrespondences[lev].find(node->children[j]);
+                    if (it != subtreeCorrespondences[lev].end()) {
                         node->childLevels[j] = it->second.first;
                         node->children[j] = it->second.second;
                     } else {
@@ -956,6 +895,8 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
         }
     }
 
+    _stats.nNodesDAG = _nNodes;
+
 
 
     /////////////////////////////////
@@ -966,11 +907,11 @@ unsigned int GeomOctree::findAllDuplicateSubtrees() {
     int totalElimNodes = 0;
     int totalElimSubtrees = 0;
     for (unsigned int i = 0; i < _levels; ++i) {
-        totalElimNodes += removableNodesPerLevel[i].size();
+        totalElimNodes += subtreeCorrespondences[i].size();
         totalElimSubtrees += subtreeCorrespondences[i].size();
-        id_t origSize = _data[i].size() + removableNodesPerLevel[i].size();
-        double pct = 100 * (removableNodesPerLevel[i].size() / double(origSize));
-        printf(" - Level %u:   \t%zu subtrees are equal to a subtree higher up. %zu / %i (%.2f%%) nodes of this level have been removed\n", i, subtreeCorrespondences[i].size(), removableNodesPerLevel[i].size(), origSize, pct);
+        id_t origSize = _data[i].size() + subtreeCorrespondences[i].size();
+        double pct = 100 * (subtreeCorrespondences[i].size() / double(origSize));
+        printf(" - Level %u:   \t%zu subtrees are equal to a subtree higher up. %zu / %i (%.2f%%) nodes of this level have been removed\n", i, subtreeCorrespondences[i].size(), subtreeCorrespondences[i].size(), origSize, pct);
     }
     printf("Total subtrees equal: %u / %zu (%.2f%%)\n", totalElimSubtrees, _nNodes, (100 * numEqualSubtrees / double(_nNodes)));
     printf("Total number of nodes that was removed: %u / %zu (%.2f%%)\n ", totalElimNodes, _nNodes, (100 * totalElimNodes / double(_nNodes)));
@@ -1200,6 +1141,15 @@ void GeomOctree::toDAG(bool iternalCall) {
                 if (bn->existsChild(j)) {
                     // Set the child pointer to the unique node that replaced this child
                     bn->children[j] = correspondences[bn->children[j]];
+
+//                    if (lev >= _levels - 1) {
+//
+//                        // test to see if recursion works. post-test: YES IT DOES. Need to set LEVELS uniform to *2 though
+//                        if ((std::rand() % 100) / 100.0 > 0.5) {
+//                            bn->children[j] = 0;
+//                            bn->childLevels[j] = 1;
+//                        }
+//                    }
                 }
 			}
 		}

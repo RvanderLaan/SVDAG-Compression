@@ -138,25 +138,20 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 
 	for (unsigned int lev = 0; lev < _levels; ++lev) {
 		unsigned int levSize = (unsigned int)octData[lev].size();
-//		levSizeAcum += levSize;
 		for (unsigned int i = 0; i < levSize; ++i) {
 			const GeomOctree::Node &n = octData[lev][i];
 			_data.push_back(sl::uint32_t(n.childrenBitmask));
-			//printf("[%2d](%3d)[%i]", lev, dagEncoded.size() - 1, std::bitset<8>(bn.childrenBitmask).count());
+//			printf("[%2d](%3d)[%i]", lev, dagEncoded.size() - 1, std::bitset<8>(bn.childrenBitmask).count());
 			if (_data.size() < _firstLeafPtr) {
 				counter = 0;
 				for (int k = 7; k >= 0; --k) {
 					if (n.children[k] != GeomOctree::nullNode) {
                         // Multi level merging: Add pointer for potential different the child levels
-                        _data.push_back(truePtrs[n.children[k] + levSizesAcum[n.childLevels[k]]]);
-
-                        // Single level merging
-//                        id_t childAddr = n.children[k] + levSizesAcum[lev];
-//                        id_t truePtr = truePtrs[childAddr];
-//                        _data.push_back(truePtr);
+                        size_t offset = n.childLevels[k] == 0 ? 0 : levSizesAcum[n.childLevels[k] - 1];
+                        _data.push_back(truePtrs[n.children[k] + offset]);
 
                         // Original single level merging
-//                        _data.push_back(truePtrs[n.children[k] + levSizeAcum]);
+//                        _data.push_back(truePtrs[n.children[k] + levSizeAcum]);size()
 
                         //printf("\t%i", dagEncoded[dagEncoded.size() - 1]);
 						counter++;

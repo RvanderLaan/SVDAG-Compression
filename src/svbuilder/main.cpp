@@ -123,25 +123,27 @@ int main(int argc, char ** argv) {
 	}
 #endif
 
+
+    octree.mergeAcrossAllLevels();
+
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
 
 //	GeomOctree octreeCopy = octree;
 
-     octree.findAllDuplicateSubtrees();
 
     if (!lossy) {
-        octree.toSDAG(false, false);
+//        octree.toSDAG(false, false);
 //        octreeCopy.toSDAG(false, true);
     }
 
 //    octree.findAllSymDuplicateSubtrees();
 
 	EncodedUSSVDAG ussvdag;
-	ussvdag.encode(octree);
+//	ussvdag.encode(octree);
 
 	EncodedSSVDAG ssvdag;
-	ssvdag.encode(octree);
+//	ssvdag.encode(octree);
 
     EncodedSSVDAG psvdag;
 //    psvdag.encode(octreeCopy);
