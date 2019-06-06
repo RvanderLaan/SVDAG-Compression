@@ -633,23 +633,21 @@ bool GeomOctree::compareSubtrees(
         std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> &nodesInSubtree
 ) {
     // If B terminates before A, they are not equal since one or more levels are lost
+    // Note: Subtree B is always higher up in the tree compared to subtree A (so a numerically lower level)
     if (nA.hasChildren() && !nB.hasChildren()) {
         return false;
-    } else if (nA.childrenBitmask != nB.childrenBitmask) {
-        return false; // If the child masks don't match up, they are definitely not equal
-    } else if (!nA.hasChildren()) {
-        // If nA doesn't have children, simply compare their child masks, since it doesn't matter what happens further down in B
+    } else if (levA == _levels - 1) {
+        // If nA is a leaf node, simply compare their child masks, since it doesn't matter what happens further down in B
         return nA.childrenBitmask == nB.childrenBitmask;
     }
 
     unsigned int childLevA = levA + 1;
     unsigned int childLevB = levB + 1;
 
-    // If the end of the graph is reached, they are equal
-    // Note: Subtree B is always higher up in the tree compared to subtree A (so a numerically lower level)
-    if (childLevA >= _levels) {
-        return true;
-    }
+    // If the end of the graph is reached, they are equal --- NO. The lowest level contains children in childmask
+//    if (childLevA >= _levels) {
+//        return nA.childrenBitmask == nB.childrenBitmask;
+//    }
 
     // For every child
     for (int i = 0; i < 8; ++i) {
@@ -663,7 +661,7 @@ bool GeomOctree::compareSubtrees(
             continue;
         }
 
-        // Retrieve the actual child nodes from their respective levels
+        // Retrieve the child nodes from their respective levels
         Node &cA = _data[childLevA][nA.children[i]];
         Node &cB = _data[childLevB][nB.children[i]];
 
@@ -752,14 +750,14 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         // Check for levels higher-up whether there is an identical subtree
         // Note: If node B terminates before node A, they are NOT equal. This will not happen since we only compare to subtrees higher-up.
         // For nodes that are not equal, add their children in the next level to the nextNodesToCheck list.
-    std::vector<id_t> currentNodesToCheck;
-    std::vector<id_t> nextNodesToCheck;
+    std::set<id_t> currentNodesToCheck;
+    std::set<id_t> nextNodesToCheck;
 
     // Initialize all nodes of the highest level - 1 for comparison to subtrees at higher levels
     // This way, the matches are found as early as possible
     unsigned int levA = 1;
     for (id_t i = 0; i < _data[levA].size(); i++) {
-        currentNodesToCheck.push_back(i);
+        currentNodesToCheck.insert(i);
     }
 
     // Some variables for analytics
@@ -779,11 +777,23 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
     // Algorithm for removing duplicates so that indices don't get messed up:
     // - Idea: Same way as toDAG: Keep track of correspondences, replace data of whole level at one time bottom-up
 
+    printf("Starting multi-level subtree comparisons:\n");
+
+
     for (; levA < _levels; ++levA) {
-        printf(" - Comparing level %u  (%zu / %zu to check)... ", levA, currentNodesToCheck.size(), _data[levA].size());
+        _clock.restart();
+        printf(" - L%u (%zu / %zu to check)... \t", levA, currentNodesToCheck.size(), _data[levA].size());
+        fflush(stdout);
+
+        int stepLogger = (int)round(currentNodesToCheck.size() / 10.f);
 
         // For all nodes to be checked...
         for (id_t idA : currentNodesToCheck) {
+            if ((idA % stepLogger == 0)) {
+                printf("%.0f%%..", round(100.f * (idA / (float)currentNodesToCheck.size())));
+                fflush(stdout);
+            }
+
             Node &nA = _data[levA][idA];
             bool foundMatch = false;
             for (unsigned int levB = 0; levB < levA; ++levB) {
@@ -819,21 +829,15 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                 // Todo: This makes it brute force, is kinda expensive. Is there a more efficient way do fewer comparisons?
                 for (int i = 0; i < 8; ++i) {
                     if (nA.existsChild(i)) {
-                        nextNodesToCheck.push_back(nA.children[i]);
+                        nextNodesToCheck.insert(nA.children[i]);
                     }
                 }
             }
         }
 
-        printf("\t -> Reduced from %lu to %lu nodes\n", _data[levA].size(), _data[levA].size() - multiLevelCorrespondences[levA].size());
+        auto time = _clock.elapsed();
 
-        // Since children of a node may also be children of other nodes in a DAG,
-        // we need to ensure children are only present once to the nextNodesToCheck vector
-        // Todo: Make it a map? Ensures entries are added only once
-        std::sort(nextNodesToCheck.begin(), nextNodesToCheck.end());
-        nextNodesToCheck.erase(
-                std::unique(nextNodesToCheck.begin(), nextNodesToCheck.end()),
-                nextNodesToCheck.end());
+        printf(" -> %lu (%.0f%%) [%s]\n", _data[levA].size() - multiLevelCorrespondences[levA].size(), 100 * multiLevelCorrespondences[levA].size() / (float) _data[levA].size(), sl::human_readable_duration(time).c_str());
 
         // After all nodes for this level have been checked, swap the current and next nodes to check
         currentNodesToCheck.clear();
