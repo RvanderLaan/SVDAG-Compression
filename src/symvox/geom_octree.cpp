@@ -651,13 +651,23 @@ bool GeomOctree::compareSubtrees(
 
     // For every child
     for (int i = 0; i < 8; ++i) {
+
+        // Todo: try out lossy compression
+        // If A doesn't have a child, and B does, try to merge anyways
+//        if (!)
+
+
         // If the child bits don't match, they are not equal
         if (nA.existsChild(i) != nB.existsChild(i)) {
             return false;
         }
         // Otherwise the child mask bits are equal.
         // If there is no child node, they can be seen as equal since there is no subtree below this node
-        if (!nA.existsChild(i)) {
+        // Note: This only holds for the leaf level.
+
+        else if (!nA.existsChild(i) && nB.existsChild(i)) {
+            return false; // allowing this could potentially create holes in geometry
+        } else if (!nA.existsChild(i) && !nB.existsChild(i)) {
             continue;
         }
 
@@ -769,6 +779,9 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
     // Contains for each level, a map of node IDs that point to level and index of an identical subtree higher-up in the graph.
     std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> multiLevelCorrespondences(_levels); // store correspondences across different levels
 
+    // Store all nodes that are visited in a subtree, so they can be potentially removed if a correspondence is found
+    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> nodesInCurSubtree(_levels);
+
     // The level of each child pointer is set in node.childLevels[k]
     // then at the end, replace the node data in each level in those subtrees
 
@@ -799,9 +812,15 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
             for (unsigned int levB = 0; levB < levA; ++levB) {
                 // For all nodes in the other level above A...
                 for (id_t j = 0; j < _data[levB].size(); ++j) {
+                    // todo: instead of checking in 'chronological' order, start looking at commonly chosen subtrees first
+                    // or make a tree of topologies, instead of checking every one
                     numTotalComparisons++;
                     Node &nB = _data[levB][j];
-                    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> nodesInCurSubtree(_levels);
+//                    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> nodesInCurSubtree(_levels);
+
+                    for (int i = 0; i < _levels; ++i) {
+                        nodesInCurSubtree[i].clear();
+                    }
 
                     // Brute force check equality of subtrees of nA and nB
                     bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
@@ -844,17 +863,13 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         currentNodesToCheck.swap(nextNodesToCheck);
     }
 
-    // TODO: CURRENT PROBLEM:
-    // When a subtree is removed, only the root correspondence is stored
-    // There could be many more pointers to nodes in that subtree, that now point to nothing
-    // Solution: correspondences for all removableNodes
-    // -> post fix: removableNodes is gone, all correspondences to other levels are stored in multiLevelCorrespondences
-    // -> should rename multiLevelCorrespondences to multiLevelCorrespondences?
-
-
     ///////////////////////////////////
     /// Removing identical subtrees ///
     ///////////////////////////////////
+
+    // Correspondences of nodes that are not equal to nodes on another level, so they stay on the same level, but their index changes
+//    std::vector<std::vector<id_t>> normalCorrespondences(_levels);
+
     // Now that all identical subtrees have been identified, the duplicate subtrees can be removed and the pointers to them should be updated.
     for (unsigned int lev = _levels - 1; lev > 0; --lev) {
         std::vector<Node> uniqueNodes;
@@ -864,12 +879,14 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
             // insert all nodes in uniqueNodes that do not have a correspondence in a higher level
-            if (multiLevelCorrespondences[lev].find(nodeIndex) == multiLevelCorrespondences[lev].end()) {
+            if (multiLevelCorrespondences[lev].count(nodeIndex) == 0) {
                 Node n = _data[lev][nodeIndex];
                 correspondences[nodeIndex] = uniqueNodes.size();
                 uniqueNodes.push_back(n);
             }
         }
+
+//        normalCorrespondences[lev] = correspondences;
 
         // Replace node data for this level
         _data[lev].clear();
@@ -894,16 +911,12 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                     if (it != multiLevelCorrespondences[lev].end()) {
                         node->childLevels[j] = it->second.first;
                         node->children[j] = it->second.second;
-                        // Higher level order may change in future iteration...
-                        // The next loop updates pointers of nodes in lower level
+                        // Node order in a higher level will change in future iteration...
+                        // Therefore, the next loop updates pointers of nodes in lower level that point to nodes in this level
                         numReplaced++;
                     } else {
                         // Else, update the index from the normal list of correspondences
                         node->children[j] = correspondences[node->children[j]];
-
-                        if (correspondences[node->children[j]] == (id_t) -1) {
-                            printf("\t\t- Missing correspondence on lev %u: Node %u, child %u\n", lev, nodeIndex, j);
-                        }
                         numRemained++;
                     }
                 }
@@ -911,23 +924,29 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         }
 
         // Update pointers from lower levels to nodes in this level
-        // Todo: Looks like this didn't change anything. Is it necessary?
-        for (unsigned int levLow = _levels - 2; levLow > lev; --levLow) {
-            for (auto cor = multiLevelCorrespondences[lev].begin(); cor != multiLevelCorrespondences[lev].end(); cor++) {
-//            for (auto const& cor : multiLevelCorrespondences[levLow]) { // causes segfault?!?!
-                // If this node from a lower level points a node in the current level...
-                if (cor->second.first == lev) {
-                    // Todo: double check that all of these pointers should exit in correspondences list
-                    _data[levLow][cor->second.second] = correspondences[cor->second.second];
+        for (int levLow = _levels - 2; levLow > lev; --levLow) {
+            for (id_t nodeIndex = 0; nodeIndex < _data[levLow].size(); ++nodeIndex) {
+                Node *node = &_data[levLow][nodeIndex];
+                // For all children...
+                for (int j = 0; j < 8; j++) {
+                    // If this node from a lower level points a node in the current level...
+                    if (node->existsChild(j) && node->childLevels[j] == lev) {
+                        if (correspondences[node->children[j]] == (id_t) -1) {
+                            printf("\t\t- Missing correspondence on lev %u: Node %u, child %u\n", levLow, nodeIndex, j);
+                        }
+
+                        // Update where that pointer has been moved to
+                        node->children[j] = correspondences[node->children[j]];
+
+                    }
                 }
             }
         }
 
-        printf("\t -> Replaced/remained: %i / %i\n", numReplaced, numRemained);
+        printf(" - L %i Replaced/remained: %i / %i\n", lev, numReplaced, numRemained);
     }
 
     _stats.nNodesDAG = _nNodes;
-
 
 
     /////////////////////////////////
