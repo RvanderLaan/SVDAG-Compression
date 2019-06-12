@@ -747,6 +747,41 @@ bool GeomOctree::compareSymSubtrees(unsigned int levA, unsigned int levB, Node &
  * Just for SVDAGs now, but SSVDAGs would likely perform better - harder to check though
  */
 unsigned int GeomOctree::mergeAcrossAllLevels() {
+
+    /** Computes a uint64_t key based on the child bitmasks of a node's children **/
+    auto computeNodeKey = [&](GeomOctree::Node &node) {
+        uint64_t key = 0;
+        for (unsigned int c = 0; c < 8; ++c) {
+            key = key << 8u;
+            if (node.childLevels[c] == _levels) { // if it's a leaf node, return its own child mask
+                const auto &childMask = node.childrenBitmask;
+                key += childMask;
+            } else if (node.existsChild(c)) {
+                const auto &childMask = _data[node.childLevels[c]][node.children[c]].childrenBitmask;
+                key += childMask;
+            }
+        }
+        return key;
+    };
+
+    ///////////////////////////////////////////////////////////////
+    /// Building multi-maps for finding potential matches faster //
+    ///////////////////////////////////////////////////////////////
+    printf("Building match maps...\n");
+    std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
+    for (unsigned int lev = 0; lev < _levels; ++lev) {
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+
+            // Correcting child levels, in case multiple build steps were used
+            for (unsigned int c = 0; c < 8; ++c) {
+                _data[lev][nodeIndex].childLevels[c] = lev + 1;
+            }
+
+            uint64_t key = computeNodeKey(_data[lev][nodeIndex]);
+            matchMaps[lev].insert(std::make_pair(key, nodeIndex));
+        }
+    }
+
     /////////////////////////////////
     /// Finding identical subtrees //
     /////////////////////////////////
@@ -807,38 +842,86 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                 fflush(stdout);
             }
 
+
+
             Node &nA = _data[levA][idA];
+            uint64_t nAKey = computeNodeKey(nA);
+
             bool foundMatch = false;
+
+            // Todo: also loop over levA itself, to find matches in the same level?
             for (unsigned int levB = 0; levB < levA; ++levB) {
-                // For all nodes in the other level above A...
-                for (id_t j = 0; j < _data[levB].size(); ++j) {
-                    // todo: instead of checking in 'chronological' order, start looking at commonly chosen subtrees first
-                    // or make a tree of topologies, instead of checking every one
-                    numTotalComparisons++;
-                    Node &nB = _data[levB][j];
-//                    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> nodesInCurSubtree(_levels);
 
-                    for (int i = 0; i < _levels; ++i) {
-                        nodesInCurSubtree[i].clear();
-                    }
+// todo: instead of checking in 'chronological' order, start looking at commonly chosen subtrees first
 
-                    // Brute force check equality of subtrees of nA and nB
-                    bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
 
-                    if (areSubtreesEqual) {
-                        foundMatch = true;
+                // TODO: THIS IS VERY VERY UGLY
+                // a different loop needs to be done depending on the level, since matchMaps doesn't work for leaves
+                if (levA == _levels - 1) {
+                    // For all nodes in the other level above A...
+                    for (id_t j = 0; j < _data[levB].size(); ++j) {
 
-                        // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
-                        multiLevelCorrespondences[levA][idA] = std::make_pair(levB, j);
+                        numTotalComparisons++;
+                        Node &nB = _data[levB][j];
 
-                        // Append all nodes in this subtree to the nodes that can be removed
-                        for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
-                            multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
+                        for (int i = 0; i < _levels; ++i) {
+                            nodesInCurSubtree[i].clear();
                         }
 
-                        break;
+                        // Brute force check equality of subtrees of nA and nB
+                        bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
+
+                        if (areSubtreesEqual) {
+                            foundMatch = true;
+
+                            // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
+                            multiLevelCorrespondences[levA][idA] = std::make_pair(levB, j);
+
+                            // Append all nodes in this subtree to the nodes that can be removed
+                            for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
+                                multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
+                            }
+
+                            break;
+                        }
+                    }
+                } else {
+
+                    // Instead of looping over EVERY node, just loop over potential matches!
+                    auto matchResult = matchMaps[levB].equal_range(nAKey);
+                    for (auto it = matchResult.first; it != matchResult.second; ++it) {
+                        id_t j = it->second;
+
+
+                        numTotalComparisons++;
+                        Node &nB = _data[levB][j];
+
+                        for (int i = 0; i < _levels; ++i) {
+                            nodesInCurSubtree[i].clear();
+                        }
+
+                        // Brute force check equality of subtrees of nA and nB
+                        bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
+
+                        if (areSubtreesEqual) {
+                            foundMatch = true;
+
+                            // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
+                            multiLevelCorrespondences[levA][idA] = std::make_pair(levB, j);
+
+                            // Append all nodes in this subtree to the nodes that can be removed
+                            for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
+                                multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
+                            }
+
+                            break;
+                        }
                     }
                 }
+
+
+
+
                 if (foundMatch) {
                     break; // If a match is found, we are done for this subtree. It is equal to a subtree higher up in the graph!
                 }
@@ -962,6 +1045,31 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         printf(" - Level %u:   \t%zu subtrees are equal to a subtree higher up. %zu / %i (%.2f%%) nodes of this level have been removed\n", i, multiLevelCorrespondences[i].size(), multiLevelCorrespondences[i].size(), origSize, pct);
     }
     printf("Total number of nodes that was removed: %u / %zu (%.2f%%)\n ", totalElimNodes, prevNNodes, (100 * totalElimNodes / double(prevNNodes)));
+
+
+//    printf("Indirect subtree feasibility: How many unique pointers there are to other levels, per level\n");
+//    for (unsigned int lev = 0; lev < _levels; ++lev) {
+//        std::vector<std::set<id_t>> uniquePointers(_levels);
+//        std::vector<unsigned int> numPointers(_levels);
+//        for (const auto &node : _data[lev]) {
+//            for (int c = 0; c < 8; ++c) {
+//                if (node.childLevels[c] != lev + 1) {
+//                    uniquePointers[node.childLevels[c]].insert(node.children[c]);
+//                    numPointers[node.childLevels[c]]++;
+//                }
+//            }
+//        }
+//
+//        unsigned int totalNumUniquePointers = 0;
+//        unsigned int totalNumPointers = 0;
+//        for (unsigned int lev2 = 0; lev2 <= lev; ++lev2) {
+//            printf("    L%u -> L%u: Unique / total = %zu / %u\n", lev, lev2, uniquePointers[lev2].size(), numPointers[lev2]);
+//            totalNumUniquePointers += uniquePointers[lev2].size();
+//            totalNumPointers += numPointers[lev2];
+//        }
+//        printf("  L%u total: Unique / total = %u / %u\n", lev, totalNumUniquePointers, totalNumPointers);
+//    }
+
 
     return totalElimNodes;
 }
