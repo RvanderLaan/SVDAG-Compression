@@ -658,29 +658,29 @@ void main() {
 	}
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-	vec4 result = trace_ray(r, t_min_max, projectionFactor, randomColors ? 0 : attrBit);
+	vec4 result = trace_ray(r, t_min_max, projectionFactor, attrBit);
 
 	int attr = 0;
 	if (result.x >= 0) {
 		attr |= 1 << 0;
 	}
-	if (randomColors) {
-		// Todo: Only count as intersection when they are intersecting the same position (the nearest one)
-		// probably requires one extra attr bit, that is the original DAG containing all geometry
-		for (int i = 1; i < 8; ++i) {
-			// Todo: reset stack?
-//			stack_size = 0;
-//			r = computeCameraRay(screenCoords);
-//			t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-			result = trace_ray(r, t_min_max, projectionFactor, i);
-			if (result.x >= 0) { // Intersection!!!
-				attr |= 1 << i;
-			}
-		}
-		float t = (attr / 255.0);
-		color = vec3(t, t, t);
-		return;
-	}
+//	if (randomColors) {
+//		// Todo: Only count as intersection when they are intersecting the same position (the nearest one)
+//		// probably requires one extra attr bit, that is the original DAG containing all geometry
+//		for (int i = 1; i < 8; ++i) {
+//			// Todo: reset stack?
+////			stack_size = 0;
+////			r = computeCameraRay(screenCoords);
+////			t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
+//			result = trace_ray(r, t_min_max, projectionFactor, i);
+//			if (result.x >= 0) { // Intersection!!!
+//				attr |= 1 << i;
+//			}
+//		}
+//		float t = (attr / 255.0);
+//		color = vec3(t, t, t);
+//		return;
+//	}
 
 
 	if (attr > 0)
@@ -700,21 +700,21 @@ void main() {
 		// CUSTOMIZED:
 		/////////////////////////////////
 		// Assign random colors based on the index of a node
-//		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
-////			color *= randomColor(uint(result.w));
-//			uint nodeIndex = uint(result.w);
-//			vec3 randomColor = normalize(vec3(
-//				(nodeIndex % 100) / 100.f,
-//				((3 * nodeIndex) % 200) / 200.f,
-//				((2 * nodeIndex) % 300) / 300.f
-//			));
-//			color *= randomColor;
-//		} else if (result.w == selectedVoxelIndex) {
-//			// Highlight selected voxel index with blue
-//			color.r *= 0.5f;
-//                        color.g *= 0.5f;
-//			color.b = 1.f;
-//		}
+		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
+//			color *= randomColor(uint(result.w));
+			uint nodeIndex = uint(result.w);
+			vec3 randomColor = normalize(vec3(
+				(nodeIndex % 100) / 100.f,
+				((3 * nodeIndex) % 200) / 200.f,
+				((2 * nodeIndex) % 300) / 300.f
+			));
+			color *= randomColor;
+		} else if (result.w == selectedVoxelIndex) {
+			// Highlight selected voxel index with blue
+			color.r *= 0.5f;
+                        color.g *= 0.5f;
+			color.b = 1.f;
+		}
 	}
 	else {
 		if (result.x == -4.) // no intersection, out of BBox => background

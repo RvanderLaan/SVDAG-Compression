@@ -159,9 +159,10 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
  * number to reflected binary Gray code.
  *
  * The operator >> is shift right. The operator ^ is exclusive or.
+ *
+ * From https://en.wikipedia.org/wiki/Gray_code#Converting_to_and_from_Gray_code
  */
-unsigned int BinaryToGray(unsigned int num)
-{
+unsigned int BinaryToGray(unsigned int num) {
     return num ^ (num >> 1);
 }
 
@@ -278,7 +279,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 
 
                             // Average of RGB: Gray scale
-                            float f = (color[0] + color[0] + color[0]) / 3.;
+                            float f = (color[0] + color[1] + color[2]) / 3.;
                             // Todo: try both for binary and for gray code
                             attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
                             attr = BinaryToGray(attr);
