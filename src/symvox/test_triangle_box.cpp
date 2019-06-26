@@ -117,9 +117,9 @@ bool testTriBox(const sl::point3d boxCenter, const double boxHalfSide, const sl:
 	sl::vector3d normal, e0, e1, e2;
 
 	sl::point3d triD[3];
-	triD[0] = sl::conv_to< sl::point3d >::from(tri[0]);
-	triD[1] = sl::conv_to< sl::point3d >::from(tri[1]);
-	triD[2] = sl::conv_to< sl::point3d >::from(tri[2]);
+	triD[0] = sl::point3d(tri[0][0], tri[0][1], tri[0][2]);
+	triD[1] = sl::point3d(tri[1][0], tri[1][1], tri[1][2]);
+	triD[2] = sl::point3d(tri[2][0], tri[2][1], tri[2][2]);
 
 	/* This is the fastest branch on Sun */
 	/* move everything so that the boxcenter is in (0,0,0) */

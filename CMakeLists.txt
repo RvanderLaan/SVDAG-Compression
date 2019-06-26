@@ -163,19 +163,19 @@ IF(BUILD_SVVIEWER)
 		src/svviewer/halton.cpp
 	)
 
+	if(UNIX)
+		set(ADDITIONAL_LIBRARIES X11 Xxf86vm m Xinerama Xcursor rt pthread)
+	else()
+		set(ADDITIONAL_LIBRARIES "")
+	endif()
+
 	TARGET_LINK_LIBRARIES( svviewer 
 		symvox
 		${OPENGL_LIBRARIES}
 		${GLFW_LIBRARIES}
 		${GLEW_LIBRARIES}
-		X11
-		Xxf86vm
-		Xinerama
-		Xcursor
-		rt
-		m
-		pthread
 		${CMAKE_DL_LIBS}
+		${ADDITIONAL_LIBRARIES}
 	)
 
 ENDIF(BUILD_SVVIEWER)

@@ -24,7 +24,10 @@
 #include <omp.h>
 
 #include <fstream>
+
+#if BUILD_LASPARSER
 #include <liblas/liblas.hpp>
+#endif
 
 #include<sl/external_array.hpp>
 
@@ -46,8 +49,13 @@ GeomOctree::GeomOctree(const GeomOctree &other) : Octree (other) {
 
 void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters) {
     if (!internalCall) printf("* Building SVO... "); fflush(stdout);
+#if BUILD_LASPARSER
+	//_bbox = sl::conv_to<sl::aabox3f>::from(bbox);
+	auto minD = bbox[0], maxD = bbox[1];
+	sl::point3f minF = sl::point3f(minD[0], minD[1], minD[2]);
+	sl::point3f maxF = sl::point3f(maxD[0], maxD[1], maxD[2]);
+	_bbox = sl::aabox3f(minF, maxF);
 
-    _bbox = sl::conv_to<sl::aabox3f>::from(bbox);
     _levels = levels;
     sl::vector3f sides =_bbox.half_side_lengths() * 2.0f;
     _rootSide = sl::max(sl::max(sides[0], sides[1]), sides[2]);
@@ -145,13 +153,19 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
     _stats.nTotalVoxels = _nVoxels;
 
     if(!internalCall) printf("OK! [%s]\n",sl::human_readable_duration(_stats.buildSVOTime).c_str());
+#endif
 }
 
 void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves) {
 	
 	if (!internalCall) printf("* Building SVO... "); fflush(stdout);
 
-	_bbox = sl::conv_to<sl::aabox3f>::from(bbox);
+	//_bbox = sl::conv_to<sl::aabox3f>::from(bbox);
+	auto minD = bbox[0], maxD = bbox[1];
+	sl::point3f minF = sl::point3f(minD[0], minD[1], minD[2]);
+	sl::point3f maxF = sl::point3f(maxD[0], maxD[1], maxD[2]);
+	_bbox = sl::aabox3f(minF, maxF);
+
 	_levels = levels;
 	sl::vector3f sides =_bbox.half_side_lengths() * 2.0f;
 	_rootSide = sl::max(sl::max(sides[0], sides[1]), sides[2]);
@@ -808,7 +822,7 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
     // Some variables for analytics
     unsigned int numTotalComparisons = 0;
     size_t prevNNodes = _nNodes;
-    _nNodes = 0;
+    _nNodes = 1;
 
     // We need to store the correspondences of one subtree to another:
     // Contains for each level, a map of node IDs that point to level and index of an identical subtree higher-up in the graph.
@@ -833,7 +847,7 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         printf(" - L%u (%zu / %zu to check)... \t", levA, currentNodesToCheck.size(), _data[levA].size());
         fflush(stdout);
 
-        int stepLogger = (int)round(currentNodesToCheck.size() / 10.f);
+        int stepLogger = (int)round((currentNodesToCheck.size() + 1) / 10.f);
 
         // For all nodes to be checked...
         for (id_t idA : currentNodesToCheck) {
@@ -841,8 +855,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                 printf("%.0f%%..", round(100.f * (idA / (float)currentNodesToCheck.size())));
                 fflush(stdout);
             }
-
-
 
             Node &nA = _data[levA][idA];
             uint64_t nAKey = computeNodeKey(nA);
