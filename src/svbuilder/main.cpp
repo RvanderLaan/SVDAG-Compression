@@ -98,7 +98,6 @@ int main(int argc, char ** argv) {
 	//sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
 	auto minF = scene.getAABB()[0],
 		 maxF = scene.getAABB()[1];
-	std::cout << scene.getAABB() << std::endl;
 	sl::point3d minD = sl::point3d(minF[0], minF[1], minF[2]);
 	sl::point3d maxD = sl::point3d(maxF[0], maxF[1], maxF[2]);
 	sl::aabox3d sceneBBoxD = sl::aabox3d(minD, maxD);

@@ -646,58 +646,60 @@ bool GeomOctree::compareSubtrees(
         Node &nB, // Should be in a higher level than a
         std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> &nodesInSubtree
 ) {
-    // If B terminates before A, they are not equal since one or more levels are lost
-    // Note: Subtree B is always higher up in the tree compared to subtree A (so a numerically lower level)
-    if (nA.hasChildren() && !nB.hasChildren()) {
-        return false;
-    } else if (levA == _levels - 1) {
-        // If nA is a leaf node, simply compare their child masks, since it doesn't matter what happens further down in B
-        return nA.childrenBitmask == nB.childrenBitmask;
-    }
+	// If B terminates before A, they are not equal since one or more levels are lost
+	 // Note: Subtree B is always higher up in the tree compared to subtree A (so a numerically lower level)
+	if (nA.hasChildren() && !nB.hasChildren()) {
+		return false;
+	}
+	else if (levA == _levels - 1) {
+		// If nA is a leaf node, simply compare their child masks, since it doesn't matter what happens further down in B
+		return nA.childrenBitmask == nB.childrenBitmask;
+	}
 
-    unsigned int childLevA = levA + 1;
-    unsigned int childLevB = levB + 1;
+	unsigned int childLevA = levA + 1;
+	unsigned int childLevB = levB + 1;
 
-    // If the end of the graph is reached, they are equal --- NO. The lowest level contains children in childmask
+	// If the end of the graph is reached, they are equal --- NO. The lowest level contains children in childmask
 //    if (childLevA >= _levels) {
 //        return nA.childrenBitmask == nB.childrenBitmask;
 //    }
 
-    // For every child
-    for (int i = 0; i < 8; ++i) {
+	// For every child
+	for (int i = 0; i < 8; ++i) {
 
-        // Todo: try out lossy compression
-        // If A doesn't have a child, and B does, try to merge anyways
+		// Todo: try out lossy compression
+		// If A doesn't have a child, and B does, try to merge anyways
 //        if (!)
 
 
-        // If the child bits don't match, they are not equal
-        if (nA.existsChild(i) != nB.existsChild(i)) {
-            return false;
-        }
-        // Otherwise the child mask bits are equal.
-        // If there is no child node, they can be seen as equal since there is no subtree below this node
-        // Note: This only holds for the leaf level.
+		// If the child bits don't match, they are not equal
+		if (nA.existsChild(i) != nB.existsChild(i)) {
+			return false;
+		}
+		// Otherwise the child mask bits are equal.
+		// If there is no child node, they can be seen as equal since there is no subtree below this node
+		// Note: This only holds for the leaf level.
 
-        else if (!nA.existsChild(i) && nB.existsChild(i)) {
-            return false; // allowing this could potentially create holes in geometry
-        } else if (!nA.existsChild(i) && !nB.existsChild(i)) {
-            continue;
-        }
+		else if (!nA.existsChild(i) && nB.existsChild(i)) {
+			return false; // allowing this could potentially create holes in geometry
+		}
+		else if (!nA.existsChild(i) && !nB.existsChild(i)) {
+			continue;
+		}
 
-        // Retrieve the child nodes from their respective levels
-        Node &cA = _data[childLevA][nA.children[i]];
-        Node &cB = _data[childLevB][nB.children[i]];
+		// Retrieve the child nodes from their respective levels
+		Node &cA = _data[childLevA][nA.children[i]];
+		Node &cB = _data[childLevB][nB.children[i]];
 
-        // Add child node to the set of unique nodes in the subtree of node A
-        nodesInSubtree[childLevA][nA.children[i]] = std::make_pair(childLevB, nB.children[i]); // stores the correspondence between these two nodes
+		// Add child node to the set of unique nodes in the subtree of node A
+		nodesInSubtree[childLevA][nA.children[i]] = std::make_pair(childLevB, nB.children[i]); // stores the correspondence between these two nodes
 
-        // Now compare the subtrees of these children - only if they are not equal, we can immediately return
-        if (!this->compareSubtrees(childLevA, childLevB, cA, cB, nodesInSubtree)) {
-            return false;
-        }
-    }
-    return true;
+		// Now compare the subtrees of these children - only if they are not equal, we can immediately return
+		if (!this->compareSubtrees(childLevA, childLevB, cA, cB, nodesInSubtree)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /** Checks whether two subtrees at different levels are equal under a specific symmetry similarity */
@@ -770,53 +772,94 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         }
     }
 
+	// Prints all childmasks of two subtrees
+	std::function<int (unsigned int levA, unsigned int levB,
+		const GeomOctree::Node &nA, const GeomOctree::Node &nB)> getMasks;
+	getMasks = [&](unsigned int levA, unsigned int levB, const GeomOctree::Node &nA, const GeomOctree::Node &nB) {
+		printf("%u %u\n", nA.childrenBitmask, nB.childrenBitmask);
+		if (levA == _levels - 1) {
+			return 0;
+		}
+		for (int c = 0; c < 8; ++c) {
+			printf("C%u: ", c);
+			if (nA.existsChild(c)) {
+				getMasks(levA + 1, levB + 1, _data[levA + 1][nA.children[c]], _data[levB + 1][nB.children[c]]);
+			} else if (nB.existsChild(c)) {
+				printf("X %u !!! !!! !!!\n", _data[levB + 1][nB.children[c]].childrenBitmask);
+			} else {
+				printf("X X\n");
+			}
+		}
+		return 0;
+	};
+
     /** Computes a uint64_t key based on the child bitmasks of a node's children **/
     std::function<uint64_t (const GeomOctree::Node &node, unsigned int depth)> computeNodeKey;
+	std::hash <uint64_t> hash64;
     computeNodeKey = [&](const GeomOctree::Node &node, unsigned int depth) {
         uint64_t key = 0;
-        if (depth == 0) {
-            key += node.childrenBitmask;
-            return key;
-        }
-        for (unsigned int c = 0; c < 8; ++c) {
-            key = key << 8u;
-            // shift the bit mask of child into the key
-            if (depth > 0 && node.childLevels[c] < _levels && node.existsChild(c)) {
-                const auto &child = _data[node.childLevels[c]][node.children[c]];
-                if (depth == 1) {
-                    key += child.childrenBitmask;
-                } else {
-                    // combine node keys of all children using XOR
-                    key = key ^ computeNodeKey(child, depth - 1);
-                }
-            }
-        }
+		//return key;
+
+		// At depth 0, just return the child mask
+		if (depth == 0) {
+			key += node.childrenBitmask;
+			return key;
+		}
+		// At depth 1, concat all 8-bit child masks into a 64 bit int
+		else if (depth == 1) {
+			for (unsigned int c = 0; c < 8; ++c) {
+				// shift the bit mask of children into the key
+				key = key << 8u;
+				if (node.existsChildPointer(c)) {
+					key += _data[node.childLevels[c]][node.children[c]].childrenBitmask;
+				}
+			}
+		}
+		// For higher depths, combine all children keys with XOR
+		else {
+			for (unsigned int c = 0; c < 8; ++c) {
+				if (node.existsChildPointer(c)) {
+					const auto &child = _data[node.childLevels[c]][node.children[c]];
+					uint64_t childKey = computeNodeKey(child, depth - 1);
+					key = hash64(hash64(key) | hash64(childKey));  // hash: TODO: for some reason this results in fewer matches?!
+					//key = key ^ childKey; // xor
+					
+					// Todo: Try another type of key, e.g. just concat strings or use hash function instead of xor
+					// there seem to be many hash collisions... or I hope so at least, performance is still pretty bad.
+				}
+			}
+		}
         return key;
     };
 
     ///////////////////////////////////////////////////////////////
     /// Building multi-maps for finding potential matches faster //
     ///////////////////////////////////////////////////////////////
+	// try out unordered map for performance improvements --->>> nothing changed
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
 
     auto buildMultiMap = [&](unsigned int depth) {
-        printf("Building match maps at depth %u...\n", depth);
-        for (unsigned int lev = 0; lev < _levels; ++lev) {
+        printf("Building match maps at depth %u... ", depth);
+		fflush(stdout);
+
+		std::ofstream myfile(
+			"C:\\Users\\Remi\\Documents\\Projects\\Thesis\\CRS4-SSVODAGs\\bin\\keys\\keys-" + std::to_string(depth) + ".txt",
+			std::ios::out | std::ios::trunc);
+        for (unsigned int lev = 0; lev < _levels - depth; ++lev) {
             matchMaps[lev].clear();
             for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-
-                // Correcting child levels, in case multiple build steps were used
-                for (unsigned int c = 0; c < 8; ++c) {
-                    _data[lev][nodeIndex].childLevels[c] = lev + 1;
-                }
-
                 uint64_t key = computeNodeKey(_data[lev][nodeIndex], depth);
                 matchMaps[lev].insert(std::make_pair(key, nodeIndex));
+				myfile << std::to_string(lev) + ", " + std::to_string(_data[lev][nodeIndex].childrenBitmask) + " ->\t " + std::to_string(key) + "\n";
             }
         }
+
+		myfile.close();
+
+		printf("Done!\n");
     };
 
-    unsigned int currentMatchDepth = 5;
+    unsigned int currentMatchDepth = _levels / 2;
     // Todo: Initial depth should depend on total # of levels, 1 seems enough for ~8K, 2 or higher for more
     buildMultiMap(currentMatchDepth);
 
@@ -865,16 +908,15 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
     printf("Starting multi-level subtree comparisons:\n");
 
-
     for (; levA < _levels; ++levA) {
         _clock.restart();
         printf(" - L%u (%zu / %zu to check)... \t", levA, currentNodesToCheck.size(), _data[levA].size());
         fflush(stdout);
 
         // Build new match maps for the lowest levels with lower depths, when those nodes do not have subtrees of that depth
-        unsigned int targetMatchDepth = _levels - levA - 1;
-        if (targetMatchDepth < currentMatchDepth) {
-            currentMatchDepth = targetMatchDepth;
+        unsigned int maxMatchDepth = _levels - levA - 1;
+        if (maxMatchDepth < currentMatchDepth) {
+			currentMatchDepth = maxMatchDepth; // currentMatchDepth / 2;
             buildMultiMap(currentMatchDepth);
         }
 
@@ -883,18 +925,20 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         unsigned long totalMatchCount = 0;
 
         // For all nodes to be checked...
-        for (id_t idA : currentNodesToCheck) {
-            if ((idA % stepLogger == 0)) {
-                printf("%.0f%%..", round(100.f * (idA / (float)currentNodesToCheck.size())));
+		unsigned int curNodeIndex = 0;
+		for (const auto& idA : currentNodesToCheck) {
+            if ((curNodeIndex % stepLogger == 0)) {
+                printf("%.0f%%..", round(100.f * (curNodeIndex / (float)currentNodesToCheck.size())));
                 fflush(stdout);
             }
+			curNodeIndex++;
 
             Node &nA = _data[levA][idA];
             uint64_t nAKey = computeNodeKey(nA, currentMatchDepth);
 
             bool foundMatch = false;
 
-            // Todo: also loop over levA itself, to find matches in the same level?
+            // also loop over levA itself, to find matches in the same level? No, that is already done in DAG
             for (unsigned int levB = 0; levB < levA; ++levB) {
 
                 // todo: instead of checking in 'chronological' order, start looking at commonly chosen subtrees first
@@ -904,8 +948,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                 totalMatchCount += matchMaps[levB].count(nAKey);
                 for (auto it = matchResult.first; it != matchResult.second; ++it) {
                     id_t j = it->second;
-
-
                     numTotalComparisons++;
                     Node &nB = _data[levB][j];
 
@@ -917,6 +959,8 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                     bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
 
                     if (areSubtreesEqual) {
+						// printf("\nMatch! LA %u LB %u, IDA: %u IDB %u\n", levA, levB, idA, j);
+						// getMasks(levA, levB, nA, nB);
                         foundMatch = true;
 
                         // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
@@ -960,9 +1004,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
     /// Removing identical subtrees ///
     ///////////////////////////////////
 
-    // Correspondences of nodes that are not equal to nodes on another level, so they stay on the same level, but their index changes
-//    std::vector<std::vector<id_t>> normalCorrespondences(_levels);
-
     // Now that all identical subtrees have been identified, the duplicate subtrees can be removed and the pointers to them should be updated.
     for (unsigned int lev = _levels - 1; lev > 0; --lev) {
         std::vector<Node> uniqueNodes;
@@ -973,13 +1014,10 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
             // insert all nodes in uniqueNodes that do not have a correspondence in a higher level
             if (multiLevelCorrespondences[lev].count(nodeIndex) == 0) {
-                Node n = _data[lev][nodeIndex];
                 correspondences[nodeIndex] = uniqueNodes.size();
-                uniqueNodes.push_back(n);
+                uniqueNodes.push_back(_data[lev][nodeIndex]);
             }
         }
-
-//        normalCorrespondences[lev] = correspondences;
 
         // Replace node data for this level
         _data[lev].clear();
@@ -993,31 +1031,32 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         int numRemained = 0;
 
         // Update all pointers in the level above
-        for (id_t nodeIndex = 0; nodeIndex < _data[lev-1].size(); ++nodeIndex) {
-            Node *node = &_data[lev - 1][nodeIndex];
-            // For all children...
-            for (int j = 0; j < 8; j++) {
-                // If this child exists...
-                if (node->existsChild(j)) {
-                    // If it was replaced by a subtree higher up
-                    auto it = multiLevelCorrespondences[lev].find(node->children[j]);
-                    if (it != multiLevelCorrespondences[lev].end()) {
-                        node->childLevels[j] = it->second.first;
-                        node->children[j] = it->second.second;
-                        // Node order in a higher level will change in future iteration...
-                        // Therefore, the next loop updates pointers of nodes in lower level that point to nodes in this level
-                        numReplaced++;
-                    } else {
-                        // Else, update the index from the normal list of correspondences
-                        node->children[j] = correspondences[node->children[j]];
-                        numRemained++;
-                    }
-                }
-            }
-        }
+		for (id_t nodeIndex = 0; nodeIndex < _data[lev-1].size(); ++nodeIndex) {
+			Node *node = &_data[lev - 1][nodeIndex];
+			// For all children...
+			for (int j = 0; j < 8; j++) {
+				// If this child exists...
+				if (node->existsChild(j)) {
+					// If it was replaced by a subtree higher up
+					auto it = multiLevelCorrespondences[lev].find(node->children[j]);
+					if (it != multiLevelCorrespondences[lev].end()) {
+						node->childLevels[j] = it->second.first;
+						node->children[j] = it->second.second;
+						// Node order in a higher level will change in future iteration...
+						// Therefore, the next loop updates pointers of nodes in lower level that point to nodes in this level
+						numReplaced++;
+					} else {
+						// Else, update the index from the normal list of correspondences
+						node->children[j] = correspondences[node->children[j]];
+						numRemained++;
+					}
+				}
+			}
+		}
+		
 
         // Update pointers from lower levels to nodes in this level
-        for (int levLow = _levels - 2; levLow > lev; --levLow) {
+        for (unsigned int levLow = _levels - 2; levLow >= lev; --levLow) {
             for (id_t nodeIndex = 0; nodeIndex < _data[levLow].size(); ++nodeIndex) {
                 Node *node = &_data[levLow][nodeIndex];
                 // For all children...
@@ -1030,7 +1069,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
                         // Update where that pointer has been moved to
                         node->children[j] = correspondences[node->children[j]];
-
                     }
                 }
             }
@@ -1258,8 +1296,6 @@ void GeomOctree::toDAG(bool iternalCall) {
 
 	 sl::time_point ts = _clock.now();
 
-     printf("\n");
-
     // For every level, starting at the leaves...
 	for (unsigned int lev = _levels - 1; lev > 0; --lev) {
         // Clear the lists used to keep track of correspondences etc
@@ -1286,7 +1322,9 @@ void GeomOctree::toDAG(bool iternalCall) {
 			}
 		}
 
-        printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+		if (!iternalCall) {
+			printf("\nReduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+		}
 
 		_data[lev].clear();
 		_data[lev].shrink_to_fit();
