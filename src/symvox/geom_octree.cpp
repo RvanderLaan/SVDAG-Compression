@@ -747,18 +747,34 @@ bool GeomOctree::compareSymSubtrees(unsigned int levA, unsigned int levB, Node &
  * Just for SVDAGs now, but SSVDAGs would likely perform better - harder to check though
  */
 unsigned int GeomOctree::mergeAcrossAllLevels() {
+    // Correcting child levels, in case multiple build steps were used
+    for (unsigned int lev = 0; lev < _levels; ++lev) {
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+            for (unsigned int c = 0; c < 8; ++c) {
+                _data[lev][nodeIndex].childLevels[c] = lev + 1;
+            }
+        }
+    }
 
     /** Computes a uint64_t key based on the child bitmasks of a node's children **/
-    auto computeNodeKey = [&](GeomOctree::Node &node) {
+    std::function<uint64_t (const GeomOctree::Node &node, unsigned int depth)> computeNodeKey;
+    computeNodeKey = [&](const GeomOctree::Node &node, unsigned int depth) {
         uint64_t key = 0;
+        if (depth == 0) {
+            key += node.childrenBitmask;
+            return key;
+        }
         for (unsigned int c = 0; c < 8; ++c) {
             key = key << 8u;
-            if (node.childLevels[c] == _levels) { // if it's a leaf node, return its own child mask
-                const auto &childMask = node.childrenBitmask;
-                key += childMask;
-            } else if (node.existsChild(c)) {
-                const auto &childMask = _data[node.childLevels[c]][node.children[c]].childrenBitmask;
-                key += childMask;
+            // shift the bit mask of child into the key
+            if (depth > 0 && node.childLevels[c] < _levels && node.existsChild(c)) {
+                const auto &child = _data[node.childLevels[c]][node.children[c]];
+                if (depth == 1) {
+                    key += child.childrenBitmask;
+                } else {
+                    // combine node keys of all children using XOR
+                    key = key ^ computeNodeKey(child, depth - 1);
+                }
             }
         }
         return key;
@@ -767,20 +783,28 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
     ///////////////////////////////////////////////////////////////
     /// Building multi-maps for finding potential matches faster //
     ///////////////////////////////////////////////////////////////
-    printf("Building match maps...\n");
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
-    for (unsigned int lev = 0; lev < _levels; ++lev) {
-        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
 
-            // Correcting child levels, in case multiple build steps were used
-            for (unsigned int c = 0; c < 8; ++c) {
-                _data[lev][nodeIndex].childLevels[c] = lev + 1;
+    auto buildMultiMap = [&](unsigned int depth) {
+        printf("Building match maps at depth %u...\n", depth);
+        for (unsigned int lev = 0; lev < _levels; ++lev) {
+            matchMaps[lev].clear();
+            for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+
+                // Correcting child levels, in case multiple build steps were used
+                for (unsigned int c = 0; c < 8; ++c) {
+                    _data[lev][nodeIndex].childLevels[c] = lev + 1;
+                }
+
+                uint64_t key = computeNodeKey(_data[lev][nodeIndex], depth);
+                matchMaps[lev].insert(std::make_pair(key, nodeIndex));
             }
-
-            uint64_t key = computeNodeKey(_data[lev][nodeIndex]);
-            matchMaps[lev].insert(std::make_pair(key, nodeIndex));
         }
-    }
+    };
+
+    unsigned int currentMatchDepth = 5;
+    // Todo: Initial depth should depend on total # of levels, 1 seems enough for ~8K, 2 or higher for more
+    buildMultiMap(currentMatchDepth);
 
     /////////////////////////////////
     /// Finding identical subtrees //
@@ -833,7 +857,16 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         printf(" - L%u (%zu / %zu to check)... \t", levA, currentNodesToCheck.size(), _data[levA].size());
         fflush(stdout);
 
+        // Build new match maps for the lowest levels with lower depths, when those nodes do not have subtrees of that depth
+        unsigned int targetMatchDepth = _levels - levA - 1;
+        if (targetMatchDepth < currentMatchDepth) {
+            currentMatchDepth = targetMatchDepth;
+            buildMultiMap(currentMatchDepth);
+        }
+
         int stepLogger = (int)round(currentNodesToCheck.size() / 10.f);
+
+        unsigned long totalMatchCount = 0;
 
         // For all nodes to be checked...
         for (id_t idA : currentNodesToCheck) {
@@ -842,86 +875,47 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                 fflush(stdout);
             }
 
-
-
             Node &nA = _data[levA][idA];
-            uint64_t nAKey = computeNodeKey(nA);
+            uint64_t nAKey = computeNodeKey(nA, currentMatchDepth);
 
             bool foundMatch = false;
 
             // Todo: also loop over levA itself, to find matches in the same level?
             for (unsigned int levB = 0; levB < levA; ++levB) {
 
-// todo: instead of checking in 'chronological' order, start looking at commonly chosen subtrees first
+                // todo: instead of checking in 'chronological' order, start looking at commonly chosen subtrees first
+
+                // Instead of looping over EVERY node, just loop over potential matches!
+                auto matchResult = matchMaps[levB].equal_range(nAKey);
+                totalMatchCount += matchMaps[levB].count(nAKey);
+                for (auto it = matchResult.first; it != matchResult.second; ++it) {
+                    id_t j = it->second;
 
 
-                // TODO: THIS IS VERY VERY UGLY
-                // a different loop needs to be done depending on the level, since matchMaps doesn't work for leaves
-                if (levA == _levels - 1) {
-                    // For all nodes in the other level above A...
-                    for (id_t j = 0; j < _data[levB].size(); ++j) {
+                    numTotalComparisons++;
+                    Node &nB = _data[levB][j];
 
-                        numTotalComparisons++;
-                        Node &nB = _data[levB][j];
-
-                        for (int i = 0; i < _levels; ++i) {
-                            nodesInCurSubtree[i].clear();
-                        }
-
-                        // Brute force check equality of subtrees of nA and nB
-                        bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
-
-                        if (areSubtreesEqual) {
-                            foundMatch = true;
-
-                            // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
-                            multiLevelCorrespondences[levA][idA] = std::make_pair(levB, j);
-
-                            // Append all nodes in this subtree to the nodes that can be removed
-                            for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
-                                multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
-                            }
-
-                            break;
-                        }
+                    for (int i = 0; i < _levels; ++i) {
+                        nodesInCurSubtree[i].clear();
                     }
-                } else {
 
-                    // Instead of looping over EVERY node, just loop over potential matches!
-                    auto matchResult = matchMaps[levB].equal_range(nAKey);
-                    for (auto it = matchResult.first; it != matchResult.second; ++it) {
-                        id_t j = it->second;
+                    // Brute force check equality of subtrees of nA and nB
+                    bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
 
+                    if (areSubtreesEqual) {
+                        foundMatch = true;
 
-                        numTotalComparisons++;
-                        Node &nB = _data[levB][j];
+                        // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
+                        multiLevelCorrespondences[levA][idA] = std::make_pair(levB, j);
 
-                        for (int i = 0; i < _levels; ++i) {
-                            nodesInCurSubtree[i].clear();
+                        // Append all nodes in this subtree to the nodes that can be removed
+                        for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
+                            multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
                         }
 
-                        // Brute force check equality of subtrees of nA and nB
-                        bool areSubtreesEqual = compareSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
-
-                        if (areSubtreesEqual) {
-                            foundMatch = true;
-
-                            // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
-                            multiLevelCorrespondences[levA][idA] = std::make_pair(levB, j);
-
-                            // Append all nodes in this subtree to the nodes that can be removed
-                            for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
-                                multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
-                            }
-
-                            break;
-                        }
+                        break;
                     }
                 }
-
-
-
-
                 if (foundMatch) {
                     break; // If a match is found, we are done for this subtree. It is equal to a subtree higher up in the graph!
                 }
@@ -936,6 +930,8 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                 }
             }
         }
+
+        printf("Avg matches found per node: %.0f\n", totalMatchCount / float(currentNodesToCheck.size()));
 
         auto time = _clock.elapsed();
 
