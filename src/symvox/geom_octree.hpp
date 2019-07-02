@@ -66,7 +66,7 @@ public:  //////// Octree Node
          * @param level The level in which this Node is (initially) located. Used to initialize the level of this node's children.
          */
         Node();
-        using Octree::Node::Node;
+//        using Octree::Node::Node;
 
 		// Operators
 		virtual bool operator==(const Node& other) const;
@@ -120,6 +120,7 @@ public:
     void removeSubtreeAndUpdatePointers(unsigned int levA, unsigned int levB, Node &nA, Node &nB);
     void toSDAG(bool internalCall = false, bool skipSymmetry = false);
 	void toSDAGCanonical();
+	void initChildLevels();
 
 	// External tools
 	bool checkIntegrity();

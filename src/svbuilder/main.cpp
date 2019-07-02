@@ -123,13 +123,27 @@ int main(int argc, char ** argv) {
 	}
 #endif
 
+    octree.initChildLevels();
 
-    octree.mergeAcrossAllLevels();
 
+	// TODO: Clean this up later
+	// This block will save both the single and multi level merged SVDAG
+    std::string path = sl::pathname_directory(inputFile);
+    std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
+    std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
+
+    // Save single-level merged
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
+    svdag.save(basePath + "-single.svdag");
 
-//	GeomOctree octreeCopy = octree;
+    octree.mergeAcrossAllLevels();
+    EncodedSVDAG svdag2;
+    svdag2.encode(octree);
+    svdag2.save(basePath + "-multi.svdag");
+
+
+
 
 
     if (!lossy) {

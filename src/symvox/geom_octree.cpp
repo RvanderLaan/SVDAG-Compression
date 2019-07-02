@@ -54,7 +54,7 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
 
     _data.resize(_levels);
 
-    Node root(0);
+    Node root;
     _data[0].push_back(root);
 
     struct QueueItem {
@@ -118,7 +118,7 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
                     // If there is no child node inserted yet, and it's not a leaf, insert a child node
                     if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
                         node.children[i] = (id_t)_data[qi.level + 1].size();
-                        _data[qi.level + 1].emplace_back(qi.level + 1);
+                        _data[qi.level + 1].emplace_back();
                         _nNodes++;
                         if (leavesCenters!=NULL && (qi.level == (_levels - 2))) leavesCenters->push_back(childrenCenters[i]);
                     }
@@ -158,7 +158,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 	
 	_data.resize(_levels);
 
-    Node root(0);
+    Node root;
 	_data[0].push_back(root);
 
 	struct QueueItem {
@@ -210,7 +210,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     // If there is no child node inserted yet, and it's not a leaf, insert a child node
 					if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
 						node.children[i] = (id_t)_data[qi.level + 1].size();
-                        _data[qi.level + 1].emplace_back(qi.level + 1);
+                        _data[qi.level + 1].emplace_back();
 						_nNodes++;
 						if (leavesCenters!=NULL && (qi.level == (_levels - 2))) leavesCenters->push_back(childrenCenters[i]);
 					}
@@ -739,12 +739,7 @@ bool GeomOctree::compareSymSubtrees(unsigned int levA, unsigned int levB, Node &
     return true;
 }
 
-/**
- * @brief mergeAcrossAllLevels Brute force search over all levels, looking for equal subtrees and merging them
- * Goal: Research to see what the benefit of multi-level merging would be.
- * Just for SVDAGs now, but SSVDAGs would likely perform better - harder to check though
- */
-unsigned int GeomOctree::mergeAcrossAllLevels() {
+void GeomOctree::initChildLevels() {
     // Correcting child levels, in case multiple build steps were used
     for (unsigned int lev = 0; lev < _levels; ++lev) {
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
@@ -753,7 +748,14 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
             }
         }
     }
+}
 
+/**
+ * @brief mergeAcrossAllLevels Brute force search over all levels, looking for equal subtrees and merging them
+ * Goal: Research to see what the benefit of multi-level merging would be.
+ * Just for SVDAGs now, but SSVDAGs would likely perform better - harder to check though
+ */
+unsigned int GeomOctree::mergeAcrossAllLevels() {
     /** Computes a uint64_t key based on the child bitmasks of a node's children **/
     std::function<uint64_t (const GeomOctree::Node &node, unsigned int depth)> computeNodeKey;
     std::hash <uint64_t> hash64;
@@ -779,15 +781,19 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
             // For higher depths, combine all children keys with XOR
         else {
             for (unsigned int c = 0; c < 8; ++c) {
+                key = key << 1u;/**/
                 if (node.existsChildPointer(c)) {
                     const auto &child = _data[node.childLevels[c]][node.children[c]];
                     uint64_t childKey = computeNodeKey(child, depth - 1);
-                    key = hash64(hash64(key) | hash64(childKey));  // hash: TODO: for some reason this results in fewer matches?!
-                    //key = key ^ childKey; // xor: Maybe try shifting by 1 bit every time
-                    // the issue is probably that two identical children cancel each other out, 1 bit shfit should fix that(?)
+//                    key = hash64(hash64(key) | hash64(childKey));  // hash: TODO: for some reason this results in fewer matches?!
 
+                    key = key ^ childKey;
                     // Todo: Try another type of key, e.g. just concat strings or use hash function instead of xor
                     // there seem to be many hash collisions... or I hope so at least, performance is still pretty bad.
+
+                    // xor: Maybe try shifting by 1 bit every time
+                    // the issue is probably that two identical children cancel each other out, 1 bit shfit should fix that(?)
+                    // yeah this works pretty well
                 }
             }
         }
@@ -1103,7 +1109,7 @@ void GeomOctree::removeSubtreeAndUpdatePointers(unsigned int levA, unsigned int 
                 if (bn->existsChild(j) && bn->children[j] == idA) {
                     // Set the child pointer to the unique node that replaced this child
                     bn->children[j] = idB;
-                    bn->childLevels[j] = levB;
+//                    bn->childLevels[j] = levB;
 
                     // Delete this node from existing (careful not to corrupt the pointers pointing to this level...)
                     // We'd need to replace the whole node list and update the pointers pointing to it afterwards, as in the bottom-up method

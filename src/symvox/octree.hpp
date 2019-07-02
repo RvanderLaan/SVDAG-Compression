@@ -51,13 +51,13 @@ public:  //////// Octree Node
         unsigned int childLevels[8];
 
 		// Constructor
-        Node(unsigned int level = 0) {
+        Node() {
 			childrenBitmask = 0;
 			children[0] = children[1] = children[2] = children[3] =
 				children[4] = children[5] = children[6] = children[7] = nullNode;
             // By default, a child is located in the level below that of its parent
             childLevels[0] = childLevels[1] = childLevels[2] = childLevels[3] =
-                childLevels[4] = childLevels[5] = childLevels[6] = childLevels[7] = level + 1;
+                childLevels[4] = childLevels[5] = childLevels[6] = childLevels[7] = -1;
 		};
 
 		// Methods
