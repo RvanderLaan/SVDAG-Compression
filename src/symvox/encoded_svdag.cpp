@@ -136,8 +136,10 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
         levSizesAcum[lev] = levSizeAcum;
     }
 
+    levSizeAcum = 0;
 	for (unsigned int lev = 0; lev < _levels; ++lev) {
 		unsigned int levSize = (unsigned int)octData[lev].size();
+		levSizeAcum += levSize;
 		for (unsigned int i = 0; i < levSize; ++i) {
 			const GeomOctree::Node &n = octData[lev][i];
 			_data.push_back(sl::uint32_t(n.childrenBitmask));
@@ -151,7 +153,7 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
                         _data.push_back(truePtrs[n.children[k] + offset]);
 
                         // Original single level merging
-//                        _data.push_back(truePtrs[n.children[k] + levSizeAcum]);size()
+//                        _data.push_back(truePtrs[n.children[k] + levSizeAcum]);
 
                         //printf("\t%i", dagEncoded[dagEncoded.size() - 1]);
 						counter++;

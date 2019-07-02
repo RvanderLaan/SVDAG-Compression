@@ -269,7 +269,6 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	buildSVO(stepLevels, bbox, true, &leavesCenters);
 	
 	printf("OK! [%s]\n", sl::human_readable_duration(_clock.elapsed() - timeStamp).c_str()); fflush(stdout);
-	
 
 	double lhs = getHalfSideD(stepLevels - 1);
 	sl::vector3d corners[8];
@@ -398,7 +397,6 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	_stats.buildDAGTime = _clock.elapsed();
 
 	printf("\t- Finished! Total time [%s]\n", sl::human_readable_duration(_stats.buildDAGTime).c_str());
-
 }
 
 unsigned int GeomOctree::cleanEmptyNodes() {
@@ -758,22 +756,38 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
     /** Computes a uint64_t key based on the child bitmasks of a node's children **/
     std::function<uint64_t (const GeomOctree::Node &node, unsigned int depth)> computeNodeKey;
+    std::hash <uint64_t> hash64;
     computeNodeKey = [&](const GeomOctree::Node &node, unsigned int depth) {
         uint64_t key = 0;
+        //return key;
+
+        // At depth 0, just return the child mask
         if (depth == 0) {
             key += node.childrenBitmask;
             return key;
         }
-        for (unsigned int c = 0; c < 8; ++c) {
-            key = key << 8u;
-            // shift the bit mask of child into the key
-            if (depth > 0 && node.childLevels[c] < _levels && node.existsChild(c)) {
-                const auto &child = _data[node.childLevels[c]][node.children[c]];
-                if (depth == 1) {
-                    key += child.childrenBitmask;
-                } else {
-                    // combine node keys of all children using XOR
-                    key = key ^ computeNodeKey(child, depth - 1);
+            // At depth 1, concat all 8-bit child masks into a 64 bit int
+        else if (depth == 1) {
+            for (unsigned int c = 0; c < 8; ++c) {
+                // shift the bit mask of children into the key
+                key = key << 8u;
+                if (node.existsChildPointer(c)) {
+                    key += _data[node.childLevels[c]][node.children[c]].childrenBitmask;
+                }
+            }
+        }
+            // For higher depths, combine all children keys with XOR
+        else {
+            for (unsigned int c = 0; c < 8; ++c) {
+                if (node.existsChildPointer(c)) {
+                    const auto &child = _data[node.childLevels[c]][node.children[c]];
+                    uint64_t childKey = computeNodeKey(child, depth - 1);
+                    key = hash64(hash64(key) | hash64(childKey));  // hash: TODO: for some reason this results in fewer matches?!
+                    //key = key ^ childKey; // xor: Maybe try shifting by 1 bit every time
+                    // the issue is probably that two identical children cancel each other out, 1 bit shfit should fix that(?)
+
+                    // Todo: Try another type of key, e.g. just concat strings or use hash function instead of xor
+                    // there seem to be many hash collisions... or I hope so at least, performance is still pretty bad.
                 }
             }
         }
@@ -882,7 +896,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
             // Todo: also loop over levA itself, to find matches in the same level?
             for (unsigned int levB = 0; levB < levA; ++levB) {
-
                 // todo: instead of checking in 'chronological' order, start looking at commonly chosen subtrees first
 
                 // Instead of looping over EVERY node, just loop over potential matches!
@@ -1003,7 +1016,7 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         }
 
         // Update pointers from lower levels to nodes in this level
-        for (int levLow = _levels - 2; levLow > lev; --levLow) {
+        for (int levLow = _levels - 2; levLow >= lev; --levLow) {
             for (id_t nodeIndex = 0; nodeIndex < _data[levLow].size(); ++nodeIndex) {
                 Node *node = &_data[levLow][nodeIndex];
                 // For all children...
@@ -1016,7 +1029,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
                         // Update where that pointer has been moved to
                         node->children[j] = correspondences[node->children[j]];
-
                     }
                 }
             }
@@ -1244,7 +1256,8 @@ void GeomOctree::toDAG(bool iternalCall) {
 
 	 sl::time_point ts = _clock.now();
 
-     printf("\n");
+	 if (!iternalCall)
+        printf("\n");
 
     // For every level, starting at the leaves...
 	for (unsigned int lev = _levels - 1; lev > 0; --lev) {
@@ -1272,7 +1285,8 @@ void GeomOctree::toDAG(bool iternalCall) {
 			}
 		}
 
-        printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+		if (!iternalCall)
+            printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
 
 		_data[lev].clear();
 		_data[lev].shrink_to_fit();
