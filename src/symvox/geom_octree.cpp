@@ -761,7 +761,8 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
     std::hash <uint64_t> hash64;
     computeNodeKey = [&](const GeomOctree::Node &node, unsigned int depth) {
         uint64_t key = 0;
-        //return key;
+//        return key;
+
 
         // At depth 0, just return the child mask
         if (depth == 0) {
@@ -781,24 +782,65 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
             // For higher depths, combine all children keys with XOR
         else {
             for (unsigned int c = 0; c < 8; ++c) {
-                key = key << 1u;/**/
                 if (node.existsChildPointer(c)) {
+                    key = key << 1u;/**/
                     const auto &child = _data[node.childLevels[c]][node.children[c]];
                     uint64_t childKey = computeNodeKey(child, depth - 1);
 //                    key = hash64(hash64(key) | hash64(childKey));  // hash: TODO: for some reason this results in fewer matches?!
 
-                    key = key ^ childKey;
+//                    key = key ^ childKey;
                     // Todo: Try another type of key, e.g. just concat strings or use hash function instead of xor
                     // there seem to be many hash collisions... or I hope so at least, performance is still pretty bad.
 
                     // xor: Maybe try shifting by 1 bit every time
                     // the issue is probably that two identical children cancel each other out, 1 bit shfit should fix that(?)
                     // yeah this works pretty well
+
+                    key = hash64(key) ^ hash64(childKey);
                 }
             }
         }
         return key;
     };
+
+
+
+    std::function<std::string (const GeomOctree::Node &node, unsigned int depth)> computeNodeString;
+    computeNodeString = [&](const GeomOctree::Node &node, unsigned int depth) {
+        std::string key = "";
+        // At depth 0, just return the child mask
+        if (depth == 0) {
+            key += std::to_string(node.childrenBitmask);
+            return key;
+        }
+            // At depth 1, concat all 8-bit child masks into a 64 bit int
+        else if (depth == 1) {
+            for (unsigned int c = 0; c < 8; ++c) {
+                // shift the bit mask of children into the key
+
+                if (node.existsChildPointer(c)) {
+                    key += std::to_string(_data[node.childLevels[c]][node.children[c]].childrenBitmask);
+                } else {
+                    key += "x";
+                }
+            }
+        }
+            // For higher depths, combine all children keys with XOR
+        else {
+            for (unsigned int c = 0; c < 8; ++c) {
+                if (node.existsChildPointer(c)) {
+                    const auto &child = _data[node.childLevels[c]][node.children[c]];
+                    std::string childKey = computeNodeString(child, depth - 1);
+                    key += "-" + childKey;
+                } else {
+                    key += "-x";
+                }
+            }
+        }
+        return key;
+    };
+
+
 
     ///////////////////////////////////////////////////////////////
     /// Building multi-maps for finding potential matches faster //
@@ -923,7 +965,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
                     if (areSubtreesEqual) {
                         foundMatch = true;
-
                         // Store that the subtree under the root of nodeA is identical to the subtree under nodeB
                         multiLevelCorrespondences[levA][idA] = std::make_pair(levB, j);
 
@@ -931,8 +972,12 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                         for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
                             multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
                         }
-
+                        printf("-OK MATCH-");
                         break;
+                    } else if (targetMatchDepth == currentMatchDepth) {
+                        std::cout << std::endl << computeNodeString(nA, currentMatchDepth) << std::endl;
+                        std::cout << computeNodeString(nB, currentMatchDepth) << std::endl;
+                        printf("Matches correspond at same depth level, but no equal?!?!\n");
                     }
                 }
                 if (foundMatch) {
@@ -1086,40 +1131,6 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
 
     return totalElimNodes;
-}
-
-/** Should be called to remove a duplicate subtree, which has n as its root */
-void GeomOctree::removeSubtreeAndUpdatePointers(unsigned int levA, unsigned int levB, Node &nA, Node &nB) {
-    // Subtree A is replaced with subtree B
-
-    // Todo: Would be more efficient to delete all nodes per level at the same time
-    // (like how the DAG is constructed)
-
-    id_t idA = std::distance(_data[levA].begin(), std::find(_data[levA].begin(), _data[levA].end(), nA));
-    id_t idB = std::distance(_data[levB].begin(), std::find(_data[levB].begin(), _data[levB].end(), nB));
-
-    // For every level in subtree A... Start 1 above levA to update the pointers to node A
-    for (unsigned int lev = levA - 1; lev < _levels; ++lev) {
-        // Update all pointers in the level above node A
-        for (id_t i = 0; i < _data[levA-1].size(); i++) {
-            Node *bn = &_data[levA-1][i];
-            // For all of this node's children...
-            for (int j = 0; j < 8; j++) {
-                // If this child equals node A...
-                if (bn->existsChild(j) && bn->children[j] == idA) {
-                    // Set the child pointer to the unique node that replaced this child
-                    bn->children[j] = idB;
-//                    bn->childLevels[j] = levB;
-
-                    // Delete this node from existing (careful not to corrupt the pointers pointing to this level...)
-                    // We'd need to replace the whole node list and update the pointers pointing to it afterwards, as in the bottom-up method
-                }
-            }
-        }
-    }
-    // Also update pointers to nodes deeper inside of the subtree under node A
-
-    // Remove all nodes in subtree A
 }
 
 /**
