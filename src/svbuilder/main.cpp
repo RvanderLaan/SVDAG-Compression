@@ -98,6 +98,7 @@ int main(int argc, char ** argv) {
 	//sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
 	auto minF = scene.getAABB()[0],
 		 maxF = scene.getAABB()[1];
+
 	sl::point3d minD = sl::point3d(minF[0], minF[1], minF[2]);
 	sl::point3d maxD = sl::point3d(maxF[0], maxF[1], maxF[2]);
 	sl::aabox3d sceneBBoxD = sl::aabox3d(minD, maxD);
@@ -120,6 +121,17 @@ int main(int argc, char ** argv) {
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
 	}
 
+	// For OBJs with very large bboxes, rendering is bugging out. Fix: Always rescale bbox to 0->1000
+	sl::vector3f newBboxMax = (scene.getAABB()[1] - scene.getAABB()[0]);
+	newBboxMax = 1000.f * (newBboxMax / newBboxMax.dot(newBboxMax)); // Normalize * 1000
+	std::cout << "BBOX: " << newBboxMax << std::endl;
+	scene.setAABB(
+		sl::aabox3f(
+			sl::point3f(0, 0, 0),
+			sl::point3f(newBboxMax[0], newBboxMax[1], newBboxMax[2])
+		)
+	);
+	octree.resizeSceneBbox(scene.getAABB());
 
 #if 0 // DEBUG TEST
 	if (!octree.checkIntegrity()) {

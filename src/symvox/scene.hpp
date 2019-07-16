@@ -65,6 +65,7 @@ public:
 
 	inline void getBounds(sl::point3f & min, sl::point3f & max) const { min = _bbox[0]; max = _bbox[1]; }
 	inline sl::aabox3f getAABB() const { return _bbox; }
+	inline void setAABB(sl::aabox3f bbox) { _bbox = bbox; }
 	
 	inline void getTriangleVertices(std::size_t idTri, sl::point3f & v0, sl::point3f & v1, sl::point3f & v2) {
 		v0 = _vertices[_indexedTris[idTri].verticesIdx[0]];

@@ -93,6 +93,12 @@ public:
 	inline float getRootSide() const { return float(_rootSide); }
 	inline unsigned int getLevels() const { return _levels; }
 
+	inline void resizeSceneBbox(sl::aabox3f bbox) {
+		_bbox = bbox;
+		sl::vector3f sides = _bbox.half_side_lengths() * 2.0f;
+		_rootSide = sl::max(sl::max(sides[0], sides[1]), sides[2]);
+	}
+
 	inline float getHalfSide(const unsigned int level) const { return float(_rootSide / double(1U << (level + 1))); }
 	inline double getHalfSideD(const unsigned int level) const { return double(_rootSide) / double(1U << (level + 1)); }
 
