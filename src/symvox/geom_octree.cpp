@@ -877,7 +877,7 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 	// try out unordered map for performance improvements --->>> nothing changed
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
 
-    auto buildMultiMap = [&](unsigned int depth) {
+    auto buildMultiMap = [&](unsigned int depth, bool writeToFile = false) {
         printf("Building match maps at depth %u... ", depth);
 		fflush(stdout);
 
@@ -889,7 +889,9 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
             for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
                 uint64_t key = computeNodeKey(_data[lev][nodeIndex], depth);
                 matchMaps[lev].insert(std::make_pair(key, nodeIndex));
-				myfile << std::to_string(lev) + ", " + std::to_string(_data[lev][nodeIndex].childrenBitmask) + " ->\t " + std::to_string(key) + "\n";
+
+				if (writeToFile)
+					myfile << std::to_string(lev) + ", " + std::to_string(_data[lev][nodeIndex].childrenBitmask) + " ->\t " + std::to_string(key) + "\n";
             }
         }
 
@@ -1007,12 +1009,12 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
                         for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
                             multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
                         }
-                        printf("-OK MATCH-");
+                        //printf("-OK MATCH-");
                         break;
                     } else if (maxMatchDepth == currentMatchDepth) {
-                        std::cout << std::endl << computeNodeString(nA, currentMatchDepth) << std::endl;
-                        std::cout << computeNodeString(nB, currentMatchDepth) << std::endl;
-                        printf("Matches correspond at same depth level, but no equal?!?!\n");
+                        //std::cout << std::endl << computeNodeString(nA, currentMatchDepth) << std::endl;
+                        //std::cout << computeNodeString(nB, currentMatchDepth) << std::endl;
+                        //printf("Matches correspond at same depth level, but no equal?!?!\n");
                     }
                 }
                 if (foundMatch) {

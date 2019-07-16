@@ -147,7 +147,7 @@ int main(int argc, char ** argv) {
 	// This block will save both the single and multi level merged SVDAG
     std::string path = sl::pathname_directory(inputFile);
     std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
-    std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
+    std::string basePath = path + sl::pathname_directory_separators() + baseName + "_" + std::to_string(nLevels);
 
     // Save single-level merged
 	EncodedSVDAG svdag;
@@ -159,16 +159,10 @@ int main(int argc, char ** argv) {
     svdag2.encode(octree);
     svdag2.save(basePath + "-multi.svdag");
 
-
-
-
-
     if (!lossy) {
 //        octree.toSDAG(false, false);
 //        octreeCopy.toSDAG(false, true);
     }
-
-//    octree.findAllSymDuplicateSubtrees();
 
 	EncodedUSSVDAG ussvdag;
 //	ussvdag.encode(octree);
@@ -185,9 +179,9 @@ int main(int argc, char ** argv) {
         std::string path = sl::pathname_directory(inputFile);
         std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
 
-        std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
+        std::string basePath = path + sl::pathname_directory_separators() + baseName + "_" + std::to_string(nLevels);
 
-        svo.save(basePath + ".svo");
+        //svo.save(basePath + ".svo");
         svdag.save(basePath + ".svdag");
         ussvdag.save(basePath + ".ussvdag");
         ssvdag.save(basePath + ".ssvdag");
