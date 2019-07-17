@@ -91,7 +91,8 @@ int main(int argc, char ** argv) {
 	}
 
 
-    bool lossy = false;
+    bool lossy = true;
+	bool multiLevel = false;
 
 	GeomOctree octree(&scene);
 
@@ -118,6 +119,7 @@ int main(int argc, char ** argv) {
         }
 	}
 	else {
+		// Todo: Apply lossy for multiple build steps as well
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
 	}
 
@@ -142,36 +144,37 @@ int main(int argc, char ** argv) {
 
     octree.initChildLevels();
 
-
-	// TODO: Clean this up later
-	// This block will save both the single and multi level merged SVDAG
-    std::string path = sl::pathname_directory(inputFile);
-    std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
-    std::string basePath = path + sl::pathname_directory_separators() + baseName + "_" + std::to_string(nLevels);
-
-    // Save single-level merged
+	// Save single-level merged
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
-    svdag.save(basePath + "-single.svdag");
 
-    octree.mergeAcrossAllLevels();
-    EncodedSVDAG svdag2;
-    svdag2.encode(octree);
-    svdag2.save(basePath + "-multi.svdag");
+	if (multiLevel) {
+		// TODO: Clean this up later
+		// This block will save both the single and multi level merged SVDAG
+		std::string path = sl::pathname_directory(inputFile);
+		std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
+		std::string basePath = path + sl::pathname_directory_separators() + baseName + "_" + std::to_string(nLevels);
 
-    if (!lossy) {
-//        octree.toSDAG(false, false);
-//        octreeCopy.toSDAG(false, true);
+		svdag.save(basePath + "-single.svdag");
+
+		octree.mergeAcrossAllLevels();
+		EncodedSVDAG svdag2;
+		svdag2.encode(octree);
+		svdag2.save(basePath + "-multi.svdag");
+	}
+
+    if (!lossy && !multiLevel) {
+        octree.toSDAG(false, false);
     }
 
 	EncodedUSSVDAG ussvdag;
-//	ussvdag.encode(octree);
+	if (!multiLevel) ussvdag.encode(octree);
 
 	EncodedSSVDAG ssvdag;
-//	ssvdag.encode(octree);
+	if (!multiLevel) ssvdag.encode(octree);
 
     EncodedSSVDAG psvdag;
-//    psvdag.encode(octreeCopy);
+    // psvdag.encode(octreeCopy);
 
     bool saveAll = false;
 

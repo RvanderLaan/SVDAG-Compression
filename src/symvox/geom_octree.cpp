@@ -473,8 +473,8 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
     std::vector<Node> uniqueNodes;
     std::vector<sl::uint32_t> uniqueRefCount; // count for each uniqueNode how many refs it has
 
+	std::vector<id_t> lossyCorrespondences; // every index indicates a node in uniqueNodes with its value as the index in lossyUniqueNodes
     std::vector<Node> lossyUniqueNodes;
-    std::map<Node, id_t> uniqueCorrIndices;
 
     sl::time_point ts = _clock.now();
 
@@ -494,8 +494,8 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
         uniqueRefCount.shrink_to_fit();
         lossyUniqueNodes.clear();
         lossyUniqueNodes.shrink_to_fit();
-        uniqueCorrIndices.clear();
 
+		// Convert to DAG as usual
         // For all nodes in this level...
         for (id_t i = 0; i < _data[lev].size(); i++) {
             Node n = _data[lev][i];
@@ -507,7 +507,6 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
                 uniqueRefCount[(*k).second] += 1;
             }
             else { // !found
-                uniqueCorrIndices[n] = uniqueNodes.size();
                 uniqueNodesChecker[n] = (id_t)uniqueNodes.size(); // store it as unique node
                 correspondences[i] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
                 uniqueNodes.push_back(n);
@@ -523,88 +522,97 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
         _data[lev].shrink_to_fit();
 
         // ===== LOSSY COMPRESSION =====
-        bool doLossy = lev >= (_levels -2); // && lev > _levels / 2; // only lossy on deepest 1/2 levels, except leaves
+        bool doLossy = lev != _levels - 1 && lev >= (_levels / 2); // only lossy on deepest 1/2 levels, except leaves
+
+		lossyCorrespondences.clear();
+		lossyCorrespondences.resize(uniqueNodes.size());
 
         if (doLossy) {
             // === Sort unique nodes on #references ===
             // https://stackoverflow.com/questions/26569801/sort-one-array-based-on-values-of-another-array
-            std::vector<std::pair<Node, sl::uint32_t>> order(uniqueNodes.size());
+			std::vector<unsigned int> origOrderIndices(uniqueNodes.size());
             for (int i = 0; i < uniqueNodes.size(); ++i){
-                order[i] = std::make_pair(uniqueNodes[i], uniqueRefCount[i]);
-//                printf("%u.", uniqueRefCount[i]);
+				origOrderIndices[i] = i;
             }
-            struct ordering {
-                bool operator ()(std::pair<Node, sl::uint32_t> const& a,
-                                 std::pair<Node, sl::uint32_t> const& b) {
-                    return a.second > b.second;
-                }
-            };
-            std::sort(order.begin(), order.end(), ordering());
+            std::sort(
+				origOrderIndices.begin(),
+				origOrderIndices.end(),
+				[&uniqueRefCount](unsigned int a, unsigned int b) { return uniqueRefCount[a] > uniqueRefCount[b]; });
+
+			// Now we have a list of indices, with those nodes with the most references at the start
 
             // === Check diff between each, merge those with diff 1 ===
             // Keep track of nodes that are merged
-            uniqueNodesChecker.clear();
-            correspondences.clear();
-            correspondences.resize(uniqueNodes.size());
+			std::map<id_t, id_t> lossyMatches;
 
-            // For every unique node, starting with the most referenced one...
-            for (int i = 0; i < order.size(); ++i) {
+			// Compare nodes with a low amount of references to all other nodes
+			for (int i = 0; i < uniqueNodes.size(); ++i) { // nodes to potentially remove
+				id_t orderedIndex = origOrderIndices[i]; // index in uniqueNodes
+				if (i < uniqueNodes.size() / 2) { // skip nodes with many refs. Act like they are unique
+					lossyCorrespondences[orderedIndex] = lossyUniqueNodes.size();
+					lossyUniqueNodes.push_back(uniqueNodes[orderedIndex]);
+					continue;
+				}
 
-                // Print number of references
-//                printf("%u,", order[i].second);
+				// If this node is already a match to another node, we can't remove it: skip
+				if (lossyMatches.find(orderedIndex) != lossyMatches.end()) {
+					// If not added yet, add it as unique node
+					if (std::find(lossyUniqueNodes.begin(), lossyUniqueNodes.end(), uniqueNodes[orderedIndex]) == lossyUniqueNodes.end()) {
+						lossyCorrespondences[orderedIndex] = lossyUniqueNodes.size();
+						lossyUniqueNodes.push_back(uniqueNodes[orderedIndex]);
+					}
+					continue;
+				}
+				
+				bool foundMatch = false;
+				for (auto const& matchIndex : origOrderIndices) { // nodes to compare to, starting with node index with most refs
+					// If comparing to itself, skip
+					if (orderedIndex == matchIndex) continue;
+					int diff = 0;
+					for (int c = 0; c < 8; ++c) {
+						if (lev == _levels - 1) {
+							// For leaves, compare bitmask
+							if (uniqueNodes[orderedIndex].existsChild(c) != uniqueNodes[matchIndex].existsChild(c)) {
+								diff++;
+							}
+						}
+						else {
+							// For inner nodes, compare child pointers
+							if (uniqueNodes[orderedIndex].children[c] != uniqueNodes[matchIndex].children[c]) {
+								diff++;
+							}
+						}
+					}
+					// If diff is <= 1, merge!
+					if (diff <= 1) {
+						// since the match might not be in lossyUniqueNodes yet, don't set the corr now, but afterwards
+						lossyMatches.insert(std::make_pair(orderedIndex, matchIndex)); // mark node j as a match to node i
+						foundMatch = true;
+						break;
+					}
+				}
+				if (!foundMatch) { // no match, so it's unique
+					lossyCorrespondences[orderedIndex] = lossyUniqueNodes.size();
+					lossyUniqueNodes.push_back(uniqueNodes[orderedIndex]);
+				}
+			}
 
-                // If node i already merged, skip
-                if (uniqueNodesChecker.find(order[i].first) != uniqueNodesChecker.end()) {
-                    continue;
-                }
-
-                // Compare it with every other node... starting at 2nd half or higher
-                for (int j = std::max(int(order.size() / 2), i) + 1; j < order.size(); ++j) {
-                    // If node j already merged, skip
-                    if (uniqueNodesChecker.find(order[j].first) != uniqueNodesChecker.end()) {
-                        continue;
-                    }
-
-                    // Compute the diff...
-                    int diff = 0;
-                    for (int c = 0; c < 8; ++c) {
-                        if (lev == _levels - 1) {
-                            // For leaves, compare bitmask
-                            if (order[i].first.existsChild(c) != order[j].first.existsChild(c)) {
-                                diff++;
-                            }
-                        } else {
-                            // For inner nodes, compare child pointers
-                            if (order[i].first.children[c] != order[j].first.children[c]) {
-                                diff++;
-                            }
-                        }
-                    }
-                    // If diff is 1, merge!
-                    if (diff <= 1) {
-                        auto corIdx = uniqueCorrIndices.find(order[j].first)->second;
-                        correspondences[corIdx] = (id_t)lossyUniqueNodes.size();
-
-                        uniqueNodesChecker[order[j].first] = 0; // mark it as merged
-
-//                        printf("%u-%u,", i, diff);
-
-    //                    printf("Merged!\n");
-                    }
-                }
-                // If not matched with other node, add as unique node
-                uniqueNodesChecker[order[i].first] = 0; // mark it as merged
-                auto n = order[i].first;
-                auto corIdx = uniqueCorrIndices.find(order[i].first)->second;
-                correspondences[corIdx] = (id_t) lossyUniqueNodes.size(); // the correspondence is this node itself
-                lossyUniqueNodes.push_back(n);
-
-                // Now that a lower levels has been changed, the DAG might change: There might now be pairs subtrees that are identical, which they were not before
-                // This was already happening, since it is bottom up!
-            }
+			// Now set the correspondences for the duplicate nodes
+			for (auto const& nodeMatch : lossyMatches) {
+				// The node at this original index points to an index in lossyUniqueNodes
+				id_t origDupIndex = nodeMatch.first;
+				id_t matchIndexInLossyUniqueNodes = std::distance(
+					lossyUniqueNodes.begin(),
+					std::find(
+						lossyUniqueNodes.begin(),
+						lossyUniqueNodes.end(),
+						uniqueNodes[nodeMatch.second]
+					));
+				lossyCorrespondences[origDupIndex] = matchIndexInLossyUniqueNodes;
+			}
 
             lossyUniqueNodes.shrink_to_fit();
-            printf("\t-> Lossy %lu \t(%.2f%%)\n", lossyUniqueNodes.size(), (lossyUniqueNodes.size() / float(uniqueNodes.size())) * 100.0);
+            printf("\t-> Lossy %lu \t(%.2f%%)\n", lossyUniqueNodes.size(), 100.0 - (lossyUniqueNodes.size() / float(uniqueNodes.size())) * 100.0);
             _data[lev] = lossyUniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
         } else {
             _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
@@ -622,11 +630,28 @@ void GeomOctree::toLossyDAG(bool iternalCall) {
                 // If this child exists...
                 if (bn->existsChild(j)) {
                     // Set the child pointer to the unique node that replaced this child
-                    bn->children[j] = correspondences[bn->children[j]];
+					if (doLossy) {
+						bn->children[j] = lossyCorrespondences[correspondences[bn->children[j]]];
+					}
+					else {
+						bn->children[j] = correspondences[bn->children[j]];
+					}
                 }
             }
         }
     }
+
+
+	/**
+	 * What needs to happen
+	 * - Convert to DAG as usual
+	 *   - This gives us a list of correspondences, which points to the new index in uniqueNodes given an index of _data[lev]
+	 * - Sort uniqueNodes by ref count
+	 * - Create new list of lossyUniqueNodes, of nodes that have correspondence to itself
+	 * - Find matches with a low diff
+	 *   - Replace list of correspondences, which points to nodes in lossyUniqueNodes given an index in _data[lev]
+	 * - Update pointers in level above 
+	 */
 
     _stats.toDAGTime = _clock.now() - ts;
 
