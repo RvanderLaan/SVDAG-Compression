@@ -591,7 +591,7 @@ Ray computeCameraRay(in const vec2 pixelScreenCoords) {
 
 float getMinT(in const int delta) {
 	
-	const ivec2 p = ivec2(gl_FragCoord.xy / delta);
+	const ivec2 p = ivec2((gl_FragCoord.xy - delta / 2) / delta);
 
 	float tl = texelFetch(minDepthTex, ivec2(p.x, p.y), 0).x;
 	float tr = texelFetch(minDepthTex, ivec2(p.x+1, p.y), 0).x;
