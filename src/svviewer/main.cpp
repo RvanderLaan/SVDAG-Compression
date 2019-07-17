@@ -32,6 +32,10 @@
 #include "renderer_monitor.hpp"
 #include "octree_dda_renderer.hpp"
 
+#include "imgui.h"
+#include "imgui_impl_opengl3.h"
+#include "imgui_impl_glfw.h"
+
 #define UPDATE_INFO_TIME 200.0 // ms
 #define SCREEN_WIDTH	1280
 #define SCREEN_HEIGHT	720
@@ -74,6 +78,10 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
 	if (key == GLFW_KEY_K) renderer->toggleRandomColors();
 
+	if (key == GLFW_KEY_F1) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::AO);
+	if (key == GLFW_KEY_F2) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::DEPTH);
+	if (key == GLFW_KEY_F3) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::SHADOW);
+	if (key == GLFW_KEY_F4) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::VIEWER);
 }
 
 static sl::vector3f fromHomog(const sl::vector4f v) { return sl::vector3f(v[0] / v[3], v[1] / v[3], v[2] / v[3]); }
@@ -103,7 +111,7 @@ int getVoxelIndexAtCursor() {
 		// Todo: use stack + dda
 		delPos += rayDir * 0.05f;
 
-		int nodeIndex = encoded_octree->getNodeIndex(delPos);
+		int nodeIndex = encoded_octree->getNodeIndex(delPos, renderer->getDrawLevel());
 		if (nodeIndex == -1) {
 			// renderer->setSelectedVoxelIndex(0);
 			continue;
@@ -161,6 +169,38 @@ void updateInfo() {
 		renderer->getUseMinDepthOptimization()
 		);
 	glfwSetWindowTitle(window, winMsg);
+}
+
+
+bool show_demo_window = true;
+bool show_another_window = false;
+ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+void handleImgui() {
+	static float f = 0.0f;
+	static int counter = 0;
+	int drawLevelInput = renderer->getDrawLevel();
+
+	ImGui::Begin("SymVox - Fork by RvanderLaan");                          // Create a window called "Hello, world!" and append into it.
+
+	if (ImGui::SliderInt("Draw level", &drawLevelInput, 1, encoded_octree->getNLevels())) {
+		renderer->setDrawLevel(drawLevelInput);
+	}
+
+	ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+	ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+	ImGui::Checkbox("Another Window", &show_another_window);
+
+	ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+	ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+
+	if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+		counter++;
+	ImGui::SameLine();
+	ImGui::Text("counter = %d", counter);
+
+	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+	ImGui::End();
 }
 
 int main(int argc, char ** argv)
@@ -226,6 +266,7 @@ int main(int argc, char ** argv)
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
 	// Open a window and create its OpenGL context
 	window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Voxelator Viewer | Loading...", NULL, NULL);
@@ -274,6 +315,13 @@ int main(int argc, char ** argv)
 	glfwSwapInterval(1); // Enable/disable vsync
 	glClearColor(0.3f, 0.5, 0.7f, 1.0f);
 
+	/////////// imgui setup //////////
+	const char* glsl_version = "#version 440";
+	ImGui::CreateContext();
+	ImGui::StyleColorsDark();
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	ImGui_ImplOpenGL3_Init(glsl_version);
+
 	/////////// Render Loop //////////
 	double t = glfwGetTime();
 	unsigned int frameCount = 0, lastCountStep = 0;
@@ -282,6 +330,10 @@ int main(int argc, char ** argv)
 	printHelp();
 
 	do {
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+
 		// UPDATE ------------------
 		cam->update();
 
@@ -291,6 +343,10 @@ int main(int argc, char ** argv)
 		glClear(GL_COLOR_BUFFER_BIT);
 		renderer->draw();
 		frameCount++;
+
+		handleImgui();
+		ImGui::Render();
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
@@ -307,6 +363,10 @@ int main(int argc, char ** argv)
 		t = glfwGetTime();
 
 	} while (!glfwWindowShouldClose(window) && !finish);
+
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
 
 	// Close OpenGL window and terminate GLFW
 	glfwTerminate();

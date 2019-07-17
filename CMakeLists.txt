@@ -44,7 +44,7 @@ IF(OpenGL_FOUND AND GLFW_FOUND AND GLEW_FOUND)
 	SET(BUILD_SVVIEWER TRUE CACHE BOOL "Build SymVox GL Viewer")
 ELSE()
 	SET(BUILD_SVVIEWER FALSE CACHE BOOL "Build SymVox GL Viewer")
-        Message("OpenGL, GLFW or GLEW libraries missing. Not building SymVoX GL Viewer")
+    Message("OpenGL, GLFW or GLEW libraries missing. Not building SymVoX GL Viewer")
 ENDIF(OpenGL_FOUND AND GLFW_FOUND AND GLEW_FOUND)
 
 IF(LIBLAS_FOUND)
@@ -102,6 +102,7 @@ INCLUDE_DIRECTORIES( ${GLFW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${GLEW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${LIBLAS_INCLUDE_DIRS} )
 
+
 #############################################################
 ##################### SYMVOX LIBRARY ###########################
 #############################################################
@@ -146,6 +147,29 @@ TARGET_LINK_LIBRARIES(svbuilder symvox)
 
 IF(BUILD_SVVIEWER)
 
+	# Setup imgui
+	set(imgui_DIR "${PROJECT_SOURCE_DIR}/include/imgui" )
+	include_directories(${imgui_DIR})
+
+	FILE(GLOB SRC_IMGUI
+		${imgui_DIR}/imgui_impl_opengl3.cpp
+		${imgui_DIR}/imgui_impl_opengl3.h
+		${imgui_DIR}/imgui_impl_glfw.cpp
+		${imgui_DIR}/imgui_impl_glfw.h
+		${imgui_DIR}/imconfig.h
+		${imgui_DIR}/imgui.cpp
+		${imgui_DIR}/imgui.h
+		${imgui_DIR}/imgui_draw.cpp
+		${imgui_DIR}/imgui_internal.h
+		${imgui_DIR}/imgui_widgets.cpp
+		${imgui_DIR}/imstb_rectpack.h
+		${imgui_DIR}/imstb_textedit.h
+		${imgui_DIR}/imstb_truetype.h
+	)
+
+	SOURCE_GROUP("imgui" FILES ${SRC_IMGUI})
+
+	# Add source code
 	ADD_EXECUTABLE( svviewer
 		src/svviewer/main.cpp
 		src/svviewer/camera.hpp
@@ -161,6 +185,7 @@ IF(BUILD_SVVIEWER)
 		src/svviewer/octree_dda_renderer.cpp
 		src/svviewer/halton.hpp
 		src/svviewer/halton.cpp
+		${SRC_IMGUI}
 	)
 
 	if(UNIX)
