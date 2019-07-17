@@ -32,7 +32,7 @@ void printUsage() {
 	printf(
 		"\n"
 		"Usage:\n"
-		"      svbuilder input_model.obj numLevels numBuildSteps <output.[svo | svdag | ussvdag | ssvdag]>\n"
+		"      svbuilder input_model.obj numLevels numBuildSteps [--lossy or -l] [--cross-level-merging or -c] [<output.[svo | svdag | ussvdag | ssvdag]>\n"
 		"Where:\n"
 		"      input_model.obj: a 3D model in ASCII OBJ format\n"
 		"      numLevels: levels of the octree to build (i.e. 10->1K^3, 13->8K^3...)\n"
@@ -90,9 +90,16 @@ int main(int argc, char ** argv) {
 		exit(1);
 	}
 
-
-    bool lossy = true;
+    bool lossy = false;
 	bool multiLevel = false;
+
+	for (int i = 4; i < argc; ++i) {
+		std::string arg = argv[i];
+		if (arg == "--lossy" || arg == "-l") 
+			lossy = true;
+		else if (arg == "-cross-level-merging" || arg == "-c")
+			multiLevel = true;
+	}
 
 	GeomOctree octree(&scene);
 

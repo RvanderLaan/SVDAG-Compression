@@ -44,6 +44,7 @@ bool finish = false;
 bool printCamera = false;
 float frameTime = 0;
 std::string filename = "";
+static char filenameInput[128];
 
 OctreeDDARenderer * renderer;
 EncodedOctree* encoded_octree;
@@ -172,8 +173,33 @@ void updateInfo() {
 	glfwSetWindowTitle(window, winMsg);
 }
 
+bool loadFile(std::string inputFile) {
+	filename = sl::pathname_base(inputFile);
+	std::string ext = sl::pathname_extension(inputFile);
+	bool incorrectFile = false;
+	if (ext == "svdag" || ext == "SVDAG") {
+		encoded_octree = new EncodedSVDAG();
+		if (!encoded_octree->load(inputFile)) incorrectFile = true;
+	}
+	else if (ext == "ussvdag" || ext == "USSVDAG") {
+		encoded_octree = new EncodedUSSVDAG();
+		if (!encoded_octree->load(inputFile)) incorrectFile = true;
+	}
+	else if (ext == "ssvdag" || ext == "SSVDAG") {
+		encoded_octree = new EncodedSSVDAG();
+		if (!encoded_octree->load(inputFile)) incorrectFile = true;
+	}
+	else if (ext == "psvdag" || ext == "PSVDAG") {
+		encoded_octree = new EncodedSSVDAG();
+		if (!encoded_octree->load(inputFile)) incorrectFile = true;
+	}
+	else
+		incorrectFile = true;
+	return incorrectFile;
+}
+
 void handleImgui() {
-	static int counter = 0;
+
 	int drawLevelInput = renderer->getDrawLevel();
 	int maxItersInput = renderer->getGPUTraversalMaxIters();
 	bool beamOptInput = renderer->getUseMinDepthOptimization();
@@ -188,6 +214,18 @@ void handleImgui() {
 	ImGui::Begin("SymVox - Fork by RvanderLaan");
 
 	ImGui::Text("File: \"%s\" - %s", filename.c_str(), encoded_octree->getDescription().c_str());
+
+	ImGui::InputText("", filenameInput, IM_ARRAYSIZE(filenameInput));
+	ImGui::SameLine();
+	if (ImGui::Button("Open new file")) {
+
+		bool error = loadFile(filenameInput);
+		// Todo: Delete previous encoded_octree?
+		if (!error) {
+			renderer->setEncodedOctree(encoded_octree);
+			renderer->uploadData();
+		}
+	}
 
 	if (ImGui::SliderInt("Draw level", &drawLevelInput, 1, encoded_octree->getNLevels()))
 		renderer->setDrawLevel(drawLevelInput);
@@ -235,28 +273,10 @@ int main(int argc, char ** argv)
 	}
 
 	std::string inputFile(argv[1]);
-	filename = sl::pathname_base(inputFile);
+	strcpy(filenameInput, inputFile.c_str());
 
 	std::string ext = sl::pathname_extension(inputFile);
-	bool incorrectFile = false;
-	if (ext == "svdag" || ext == "SVDAG") {
-		encoded_octree = new EncodedSVDAG();
-		if (!encoded_octree->load(inputFile)) incorrectFile = true;
-	}
-	else if (ext == "ussvdag" || ext == "USSVDAG") {
-		encoded_octree = new EncodedUSSVDAG();
-		if (!encoded_octree->load(inputFile)) incorrectFile = true;
-	}
-	else if (ext == "ssvdag" || ext == "SSVDAG") {
-		encoded_octree = new EncodedSSVDAG();
-		if (!encoded_octree->load(inputFile)) incorrectFile = true;
-	}
-    else if (ext == "psvdag" || ext == "PSVDAG") {
-        encoded_octree = new EncodedSSVDAG();
-        if (!encoded_octree->load(inputFile)) incorrectFile = true;
-    }
-	else 
-		incorrectFile = true;
+	bool incorrectFile = loadFile(inputFile);
 
 	if (incorrectFile) {
 		printf("* ERROR: Unsupported octree '%s'\n", inputFile.c_str());

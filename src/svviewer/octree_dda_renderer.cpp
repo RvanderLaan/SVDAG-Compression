@@ -74,6 +74,129 @@ OctreeDDARenderer::OctreeDDARenderer(EncodedOctree * eo) {
 	_sdag4UseTex3D = false;
 }
 
+void OctreeDDARenderer::uploadData(bool init) {
+	GLint tmp;
+	glGetIntegerv(GL_MAX_TEXTURE_BUFFER_SIZE, &tmp);
+	const unsigned int maxTBOTexels = (unsigned int)tmp;
+	glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &tmp);
+	const unsigned int maxT3DTexels = (unsigned int)tmp;
+	const unsigned int maxT3DTexelsPow2 = maxT3DTexels * maxT3DTexels;
+
+	// Clear data buffers in case they already were uploaded before
+	// todo: ??
+	//glDeleteTextures(4, _glTex);
+	//glDeleteBuffers(2, _glBuf);
+
+	if (_octreeFormat == SVO) {
+		EncodedSVO * svo = static_cast<EncodedSVO *>(_encodedOctree);
+		if (init) glGenBuffers(1, _glBuf);
+		if (init) glGenTextures(1, _glTex);
+		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
+		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
+		if ((svo->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
+		printf("Uploading Data to TBO: %zu texels [%s]\n", svo->getDataSize() / 16, sl::human_readable_size(svo->getDataSize()).c_str());
+		glBufferData(GL_TEXTURE_BUFFER, svo->getDataSize(), svo->getDataPtr(), GL_STATIC_DRAW);
+		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
+		glBindTexture(GL_TEXTURE_BUFFER, 0);
+		glBindBuffer(GL_TEXTURE_BUFFER, 0);
+	}
+	else if (_octreeFormat == SVDAG) {
+		EncodedSVDAG * dag = static_cast<EncodedSVDAG *>(_encodedOctree);
+		if (init) glGenBuffers(1, _glBuf);
+		if (init) glGenTextures(1, _glTex);
+		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
+		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
+		if ((dag->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
+		printf("Uploading Data to TBO: %zu texels [%s]\n", dag->getDataSize() / 16, sl::human_readable_size(dag->getDataSize()).c_str());
+		glBufferData(GL_TEXTURE_BUFFER, dag->getDataSize(), dag->getDataPtr(), GL_DYNAMIC_DRAW);
+		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
+		glBindTexture(GL_TEXTURE_BUFFER, 0);
+		glBindBuffer(GL_TEXTURE_BUFFER, 0);
+	}
+	else if (_octreeFormat == USSVDAG) {
+		EncodedUSSVDAG * sdag1 = static_cast<EncodedUSSVDAG *>(_encodedOctree);
+		if (init) glGenBuffers(1, _glBuf);
+		if (init) glGenTextures(1, _glTex);
+		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
+		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
+		if ((sdag1->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
+		printf("Uploading Data to TBO: %zu texels [%s]\n", sdag1->getDataSize() / 16, sl::human_readable_size(sdag1->getDataSize()).c_str());
+		glBufferData(GL_TEXTURE_BUFFER, sdag1->getDataSize(), sdag1->getDataPtr(), GL_STATIC_DRAW);
+		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
+		glBindTexture(GL_TEXTURE_BUFFER, 0);
+		glBindBuffer(GL_TEXTURE_BUFFER, 0);
+	}
+	else if (_octreeFormat == SSVDAG) {
+		EncodedSSVDAG * sdag4 = static_cast<EncodedSSVDAG *>(_encodedOctree);
+
+		// TEXTURE_0 -> TBO with LEAVES
+		if (init) glGenBuffers(1, _glBuf);
+		if (init) glGenTextures(1, &_glTex[0]);
+		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
+		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
+		if ((sdag4->getLeafNodesSize() / 8) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
+		printf("Uploading Leaf nodes to TBO: %u texels [%s]\n", sdag4->getLeafNodesSize() / 8, sl::human_readable_size(sdag4->getLeafNodesSize()).c_str());
+		glBufferData(GL_TEXTURE_BUFFER, sdag4->getLeafNodesSize(), sdag4->getLeafNodesDataPtr(), GL_STATIC_DRAW);
+		glTexBuffer(GL_TEXTURE_BUFFER, GL_RG32UI, _glBuf[0]);
+		glBindTexture(GL_TEXTURE_BUFFER, 0);
+		glBindBuffer(GL_TEXTURE_BUFFER, 0);
+
+		// TEXTURE_1 -> Inners
+		if (init) glGenTextures(1, &_glTex[1]);
+		if (_sdag4UseTex3D) { // as a 3D Texture
+			const int texelSize = 2; // corresponding to GL_R16UI
+			const unsigned int neededTexels = sdag4->getNInnerNodes();
+			unsigned int depthLayers = 1 + (neededTexels / maxT3DTexelsPow2);
+			const unsigned int texelsToAllocate = maxT3DTexelsPow2 * depthLayers;
+			sdag4->expandInnerBuffer(texelsToAllocate);
+			glBindTexture(GL_TEXTURE_3D, _glTex[1]);
+			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
+			printf("\t -Uploading Inners to 3D texture (%i x %i x %i) [%s]\n", maxT3DTexels, maxT3DTexels, depthLayers, sl::human_readable_size(maxT3DTexelsPow2 * depthLayers * 2).c_str());
+			glTexImage3D(GL_TEXTURE_3D, 0, GL_R16UI, maxT3DTexels, maxT3DTexels, depthLayers, 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, sdag4->getInnerNodesDataPtr());
+			glBindTexture(GL_TEXTURE_3D, 0);
+			sdag4->compressInnerBuffer(neededTexels);
+		}
+		else { // as a TBO
+			if (init) glGenBuffers(1, &_glBuf[1]);
+			glBindTexture(GL_TEXTURE_BUFFER, _glTex[1]);
+			glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[1]);
+			if ((sdag4->getInnerNodesSize() / 8) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
+			printf("Uploading Inner nodes to TBO: %u texels [%s]\n", sdag4->getInnerNodesSize() / 8, sl::human_readable_size(sdag4->getInnerNodesSize()).c_str());
+			glBufferData(GL_TEXTURE_BUFFER, sdag4->getInnerNodesSize(), sdag4->getInnerNodesDataPtr(), GL_STATIC_DRAW);
+			glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA16UI, _glBuf[1]);
+			glBindTexture(GL_TEXTURE_BUFFER, 0);
+			glBindBuffer(GL_TEXTURE_BUFFER, 0);
+		}
+	}
+
+	if (!init) {
+		for (int i = 0; i < 4; ++i) {
+			// Todo: Properly reset uniforms when reuploading data
+			// Just copied some lines for now, mostly for SVDAG
+			_program[i].setDefine("LEVELS", (int)_encodedOctree->getNLevels());
+			_program[i].setDefine("ROOT_HALF_SIDE", _encodedOctree->getRootSide() / 2.0f);
+
+			if (_octreeFormat == SSVDAG) {
+				_program[i].setDefine("INNER_LEVELS", (int)(_encodedOctree->getNLevels() - 2));
+			}
+			else {
+				_program[i].setDefine("INNER_LEVELS", (int)(_encodedOctree->getNLevels() - 1));
+			}
+
+			// Non-dynamic generic uniforms
+			const sl::aabox3f& box = _encodedOctree->getSceneBBox();
+			glUseProgram(_program[i].getGLProgram());
+			glUniform3fv(_program[i].getUniformID("sceneBBoxMin"), 1, box[0].to_pointer());
+			glUniform3fv(_program[i].getUniformID("sceneBBoxMax"), 1, box[1].to_pointer());
+			glUniform3fv(_program[i].getUniformID("sceneCenter"), 1, box.center().to_pointer());
+			glUniform1f(_program[i].getUniformID("rootHalfSide"), _encodedOctree->getHalfSide());
+		}
+	}
+}
 
 void OctreeDDARenderer::init() {
 
@@ -186,91 +309,7 @@ void OctreeDDARenderer::init() {
 		printfGLError();
 	}
 
-	if (_octreeFormat == SVO) {
-		EncodedSVO * svo = static_cast<EncodedSVO *>(_encodedOctree);
-		glGenBuffers(1, _glBuf);
-		glGenTextures(1, _glTex);
-		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
-		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
-		if ((svo->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
-		printf("Uploading Data to TBO: %zu texels [%s]\n", svo->getDataSize() / 16, sl::human_readable_size(svo->getDataSize()).c_str());
-		glBufferData(GL_TEXTURE_BUFFER, svo->getDataSize(), svo->getDataPtr(), GL_STATIC_DRAW);
-		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
-		glBindTexture(GL_TEXTURE_BUFFER, 0);
-		glBindBuffer(GL_TEXTURE_BUFFER, 0);
-	}
-	else if (_octreeFormat == SVDAG) {
-		EncodedSVDAG * dag = static_cast<EncodedSVDAG *>(_encodedOctree);
-		glGenBuffers(1, _glBuf);
-		glGenTextures(1, _glTex);
-		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
-		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
-		if ((dag->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
-		printf("Uploading Data to TBO: %zu texels [%s]\n", dag->getDataSize() / 16, sl::human_readable_size(dag->getDataSize()).c_str());
-		glBufferData(GL_TEXTURE_BUFFER, dag->getDataSize(), dag->getDataPtr(), GL_DYNAMIC_DRAW);
-		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
-		glBindTexture(GL_TEXTURE_BUFFER, 0);
-		glBindBuffer(GL_TEXTURE_BUFFER, 0);
-	}
-	else if (_octreeFormat == USSVDAG) {
-		EncodedUSSVDAG * sdag1 = static_cast<EncodedUSSVDAG *>(_encodedOctree);
-		glGenBuffers(1, _glBuf);
-		glGenTextures(1, _glTex);
-		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
-		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
-		if ((sdag1->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
-		printf("Uploading Data to TBO: %zu texels [%s]\n", sdag1->getDataSize() / 16, sl::human_readable_size(sdag1->getDataSize()).c_str());
-		glBufferData(GL_TEXTURE_BUFFER, sdag1->getDataSize(), sdag1->getDataPtr(), GL_STATIC_DRAW);
-		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
-		glBindTexture(GL_TEXTURE_BUFFER, 0);
-		glBindBuffer(GL_TEXTURE_BUFFER, 0);
-	}
-	else if (_octreeFormat == SSVDAG) {
-		EncodedSSVDAG * sdag4 = static_cast<EncodedSSVDAG *>(_encodedOctree);
-
-		// TEXTURE_0 -> TBO with LEAVES
-		glGenBuffers(1, _glBuf);
-		glGenTextures(1, &_glTex[0]);
-		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
-		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
-		if ((sdag4->getLeafNodesSize() / 8) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
-		printf("Uploading Leaf nodes to TBO: %u texels [%s]\n", sdag4->getLeafNodesSize() / 8, sl::human_readable_size(sdag4->getLeafNodesSize()).c_str());
-		glBufferData(GL_TEXTURE_BUFFER, sdag4->getLeafNodesSize(), sdag4->getLeafNodesDataPtr(), GL_STATIC_DRAW);
-		glTexBuffer(GL_TEXTURE_BUFFER, GL_RG32UI, _glBuf[0]);
-		glBindTexture(GL_TEXTURE_BUFFER, 0);
-		glBindBuffer(GL_TEXTURE_BUFFER, 0);
-
-		// TEXTURE_1 -> Inners
-		glGenTextures(1, &_glTex[1]);
-		if (_sdag4UseTex3D) { // as a 3D Texture
-			const int texelSize = 2; // corresponding to GL_R16UI
-			const unsigned int neededTexels = sdag4->getNInnerNodes();
-			unsigned int depthLayers = 1 + (neededTexels / maxT3DTexelsPow2);
-			const unsigned int texelsToAllocate = maxT3DTexelsPow2 * depthLayers;
-			sdag4->expandInnerBuffer(texelsToAllocate);
-			glBindTexture(GL_TEXTURE_3D, _glTex[1]);
-			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
-			printf("\t -Uploading Inners to 3D texture (%i x %i x %i) [%s]\n", maxT3DTexels, maxT3DTexels, depthLayers, sl::human_readable_size(maxT3DTexelsPow2 * depthLayers * 2).c_str());
-			glTexImage3D(GL_TEXTURE_3D, 0, GL_R16UI, maxT3DTexels, maxT3DTexels, depthLayers, 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, sdag4->getInnerNodesDataPtr());
-			glBindTexture(GL_TEXTURE_3D, 0);
-			sdag4->compressInnerBuffer(neededTexels);
-		}
-		else { // as a TBO
-			glGenBuffers(1, &_glBuf[1]);
-			glBindTexture(GL_TEXTURE_BUFFER, _glTex[1]);
-			glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[1]);
-			if ((sdag4->getInnerNodesSize() / 8) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
-			printf("Uploading Inner nodes to TBO: %u texels [%s]\n", sdag4->getInnerNodesSize() / 8, sl::human_readable_size(sdag4->getInnerNodesSize()).c_str());
-			glBufferData(GL_TEXTURE_BUFFER, sdag4->getInnerNodesSize(), sdag4->getInnerNodesDataPtr(), GL_STATIC_DRAW);
-			glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA16UI, _glBuf[1]);
-			glBindTexture(GL_TEXTURE_BUFFER, 0);
-			glBindBuffer(GL_TEXTURE_BUFFER, 0);
-		}
-	}
+	uploadData(true);
 
 	glGenFramebuffers(1, &_glFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, _glFBO);

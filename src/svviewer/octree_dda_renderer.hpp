@@ -46,6 +46,7 @@ public:
 
 public:
 	OctreeDDARenderer(EncodedOctree * eo);
+	virtual void uploadData(bool init = false);
 	virtual void init();
 	virtual void draw(GLint renderBuffer = 0);
 	virtual void clearState();
@@ -63,7 +64,7 @@ public:
 	inline void toggleRandomColors() { _randomColors = !_randomColors; }
 
 	inline sl::aabox3f getSceneBBox() { return _encodedOctree->getSceneBBox(); }
-	inline void setEncodedOctree(EncodedOctree * eo) { ; }
+	inline void setEncodedOctree(EncodedOctree * eo) { _encodedOctree = eo; }
 
 	inline void setDrawLevel(unsigned int dl) { _drawLevel = sl::max(1U, sl::min(dl, getNLevels())); }
 	inline void incDrawLevel(int k = 1) { setDrawLevel(_drawLevel + k); }
