@@ -73,6 +73,7 @@ public:
 	inline void setRotFactor(float rf) { _rotFactor = rf; }
 	inline void setPanFactor(float pf) { _panFactor = pf; }
 	inline void setWalkFactor(float wf) { _walkFactor = wf; }
+	inline float getWalkFactor() { return _walkFactor; }
 
 	inline sl::projective_map3f getProjMatrix() { return _projMatrix; }
 	inline sl::rigid_body_map3f getViewMatrix() { return _viewMatrix; }

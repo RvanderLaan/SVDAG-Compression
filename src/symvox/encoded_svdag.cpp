@@ -188,14 +188,14 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 	printf("OK! [%s]\n", sl::human_readable_duration(_encodingTime).c_str());
 }
 
-int EncodedSVDAG::getNodeIndex(sl::point3f p) const
+int EncodedSVDAG::getNodeIndex(sl::point3f p, int level) const
 {
 	TravNode curNode = getRootTravNode();
 	sl::point3f nodeCenter = _sceneBBox.center();
 
 	bool mX = false, mY = false, mZ = false;
 
-	for (int i = 0; i < getNLevels(); i++) {
+	for (int i = 0; i < level; i++) {
 
 		if (mX) p[0] = 2.f * nodeCenter[0] - p[0];
 		if (mY) p[1] = 2.f * nodeCenter[1] - p[1];

@@ -387,8 +387,6 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 	//clearState();
 }
 
-
-
 void OctreeDDARenderer::end() {
 	clearState();
 	glDeleteTextures(4, _glTex);

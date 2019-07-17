@@ -43,6 +43,7 @@
 bool finish = false;
 bool printCamera = false;
 float frameTime = 0;
+std::string filename = "";
 
 OctreeDDARenderer * renderer;
 EncodedOctree* encoded_octree;
@@ -171,35 +172,48 @@ void updateInfo() {
 	glfwSetWindowTitle(window, winMsg);
 }
 
-
-bool show_demo_window = true;
-bool show_another_window = false;
-ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
 void handleImgui() {
-	static float f = 0.0f;
 	static int counter = 0;
 	int drawLevelInput = renderer->getDrawLevel();
+	int maxItersInput = renderer->getGPUTraversalMaxIters();
+	bool beamOptInput = renderer->getUseMinDepthOptimization();
+	bool randomColsInput = renderer->getRandomColors();
+	float pixTolInput = renderer->getPixelTolerance();
+	float fovInput = renderer->getFovH();
+	float walkFactorInput = renderer->getCamera()->getWalkFactor();
 
-	ImGui::Begin("SymVox - Fork by RvanderLaan");                          // Create a window called "Hello, world!" and append into it.
+	const static char* renderModes[] = { "VIEWER", "DEPTH", "SHADOW", "AO" };
+	int renderModeInput = renderer->getViewerRenderMode();
 
-	if (ImGui::SliderInt("Draw level", &drawLevelInput, 1, encoded_octree->getNLevels())) {
+	ImGui::Begin("SymVox - Fork by RvanderLaan");
+
+	ImGui::Text("File: \"%s\" - %s", filename.c_str(), encoded_octree->getDescription().c_str());
+
+	if (ImGui::SliderInt("Draw level", &drawLevelInput, 1, encoded_octree->getNLevels()))
 		renderer->setDrawLevel(drawLevelInput);
+	if (ImGui::SliderInt("Max trav iters", &maxItersInput, 1, 500))
+		renderer->setGPUTraversalMaxIters(maxItersInput);
+	if (ImGui::Checkbox("Beam optimization", &beamOptInput))
+		renderer->toggleUseMinDepthOptimization();
+	if (ImGui::Checkbox("Random colors", &randomColsInput))
+		renderer->toggleRandomColors();
+	if (ImGui::SliderFloat("Pixel tolerance", &pixTolInput, 0.0f, 4.0f))
+		renderer->setPixelTolerance(pixTolInput);
+	//if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
+	//	renderer->setFovH(fovInput);
+
+	if (ImGui::SliderFloat("Move speed", &walkFactorInput, 0.0f, 4.0f))
+		renderer->getCamera()->setWalkFactor(walkFactorInput);
+
+
+	if (ImGui::Combo("Render mode", &renderModeInput, renderModes, IM_ARRAYSIZE(renderModes))) {
+		renderer->setViewerRenderMode(renderModeInput);
 	}
 
-	ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-	ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-	ImGui::Checkbox("Another Window", &show_another_window);
-
-	ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-	ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-	if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-		counter++;
-	ImGui::SameLine();
-	ImGui::Text("counter = %d", counter);
-
+	// todo: show count, # references (per level), etc. + delete button
+	ImGui::Text("Selected voxel index (Hover + Enter): %i", renderer->getSelectedVoxelIndex());
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
 	ImGui::End();
 }
 
@@ -221,6 +235,7 @@ int main(int argc, char ** argv)
 	}
 
 	std::string inputFile(argv[1]);
+	filename = sl::pathname_base(inputFile);
 
 	std::string ext = sl::pathname_extension(inputFile);
 	bool incorrectFile = false;

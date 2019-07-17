@@ -27,6 +27,8 @@
 #include <fstream>
 #include <ctime>
 
+#include "imgui.h"
+
 
 Camera::Camera(GLFWwindow * win) {
 	_glfwWindow = win;
@@ -127,36 +129,38 @@ void Camera::update(bool sticky) {
 	}
 	if (glfwGetKey(_glfwWindow, GLFW_KEY_Q) == GLFW_PRESS) {
 	  sl::vector3f dir = (_cam.target - _cam.pos);
-	  float delta = 2.0f * 3.14f / 180.0f;
+	  float delta = 2.0f * 3.14f / 180.0f * 0.5;
 	  sl::rigid_body_map3f r = sl::linear_map_factory3f::rotation(_cam.up, delta);
 	  _cam.target = _cam.pos + r * dir;
 	  updateMatrices();
 	}
 	if (glfwGetKey(_glfwWindow, GLFW_KEY_E) == GLFW_PRESS) {
 	  sl::vector3f dir = (_cam.target - _cam.pos);
-	  float delta = -2.0f * 3.14f / 180.0f;
+	  float delta = -2.0f * 3.14f / 180.0f * 0.5;
 	  sl::rigid_body_map3f r = sl::linear_map_factory3f::rotation(_cam.up, delta);
 	  _cam.target = _cam.pos + r * dir;
 	  updateMatrices();
 	}
 	
-	if(glfwGetMouseButton(_glfwWindow, GLFW_MOUSE_BUTTON_1) == GLFW_PRESS) {
-		if(_gestureState != ROTATING) {
-			_clickedCoords = _coords;
-			_gestureState = ROTATING;
+	if (!ImGui::IsAnyWindowHovered() && !ImGui::IsAnyItemHovered()) {
+		if(glfwGetMouseButton(_glfwWindow, GLFW_MOUSE_BUTTON_1) == GLFW_PRESS) {
+			if(_gestureState != ROTATING) {
+				_clickedCoords = _coords;
+				_gestureState = ROTATING;
+			}
+		} else if(glfwGetMouseButton(_glfwWindow, GLFW_MOUSE_BUTTON_2) == GLFW_PRESS) {
+			if(_gestureState != ZOOMING) {
+				_clickedCoords = _coords;
+				_gestureState = ZOOMING;
+			}
+		} else if(glfwGetMouseButton(_glfwWindow, GLFW_MOUSE_BUTTON_3) == GLFW_PRESS) {
+			if(_gestureState != PANNING) {
+				_clickedCoords = _coords;
+				_gestureState = PANNING;
+			}
+		} else {
+			_gestureState = NONE;
 		}
-	} else if(glfwGetMouseButton(_glfwWindow, GLFW_MOUSE_BUTTON_2) == GLFW_PRESS) {
-		if(_gestureState != ZOOMING) {
-			_clickedCoords = _coords;
-			_gestureState = ZOOMING;
-		}
-	} else if(glfwGetMouseButton(_glfwWindow, GLFW_MOUSE_BUTTON_3) == GLFW_PRESS) {
-		if(_gestureState != PANNING) {
-			_clickedCoords = _coords;
-			_gestureState = PANNING;
-		}
-	} else {
-		_gestureState = NONE;
 	}
 
 	switch(_gestureState) {

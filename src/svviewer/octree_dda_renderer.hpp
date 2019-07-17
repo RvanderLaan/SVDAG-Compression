@@ -51,11 +51,15 @@ public:
 	virtual void clearState();
 	virtual void resetState();
 	virtual void end();
+	void clearVoxel(int position, int level);
 	virtual unsigned int getNLevels() { return _encodedOctree->getNLevels(); }
 	inline void selectRenderMode(RenderMode mode) { _selectedRenderMode = mode; }
+	inline RenderMode getSelectedRenderMode() { return _selectedRenderMode; }
 
 	virtual void clearVoxel(int position);
 	inline void setSelectedVoxelIndex(int i) { _selectedVoxelIndex = i; }
+	inline int getSelectedVoxelIndex() { return _selectedVoxelIndex; }
+	inline bool getRandomColors() { return _randomColors; }
 	inline void toggleRandomColors() { _randomColors = !_randomColors; }
 
 	inline sl::aabox3f getSceneBBox() { return _encodedOctree->getSceneBBox(); }
@@ -68,8 +72,10 @@ public:
 
 	inline void incPixelTolerance() { _pixelTolerance *= 2.0f; _projectionFactor = getProjectionFactor(_pixelTolerance); }
 	inline void decPixelTolerance() { _pixelTolerance /= 2.0f; _projectionFactor = getProjectionFactor(_pixelTolerance); }
+	inline void setPixelTolerance(float f) { _pixelTolerance = f; _projectionFactor = getProjectionFactor(_pixelTolerance); }
 	inline float getPixelTolerance() const { return _pixelTolerance; }
-	inline void setFovH(float x) { _fovy = x; }
+	inline void setFovH(float x) { _fovy = x; _projectionFactor = getProjectionFactor(_pixelTolerance); }
+	inline float getFovH() { return _fovy; }
 	inline float getProjectionFactor() { return _projectionFactor; }
 
 	inline void setGPUTraversalMaxIters(unsigned int mi) { _gpuTraversalMaxIters = sl::max(1U, mi); }
@@ -78,6 +84,8 @@ public:
 	inline void decGPUTraversalMaxIters(unsigned int k = 1) { setGPUTraversalMaxIters(_gpuTraversalMaxIters - k); }
 
 	inline void nextViewerRenderMode() { _viewerRenderMode = (_viewerRenderMode < 2) ? _viewerRenderMode + 1 : 0; }
+	inline void setViewerRenderMode(int mode) { _viewerRenderMode = mode; }
+	inline int getViewerRenderMode() { return _viewerRenderMode; }
 	inline void setLightPos(sl::point3f p) { _lightPos = p; }
 
 	inline void toggleUseMinDepthOptimization() { _useMinDepthOptimization = !_useMinDepthOptimization; }
@@ -90,8 +98,6 @@ public:
 		_shadowsInputNormTex = normTex;
 	}
 
-
-private:
 	std::string getOctreeFormatName();
 	std::string getRenderModeName(RenderMode mode);
 	float getProjectionFactor(float pixelTolerance, float screenDivisor = 1.0f);

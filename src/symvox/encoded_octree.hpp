@@ -48,7 +48,7 @@ public:
 		return 0;
 	}
 
-	virtual int getNodeIndex(sl::point3f p) const {
+	virtual int getNodeIndex(sl::point3f p, int level) const {
 		printf("WARNING:EncodedOctree:getNodeIndex() Not implemented\n");
 		return 0;
 	}
