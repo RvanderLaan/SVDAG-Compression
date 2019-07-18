@@ -66,7 +66,8 @@ void printHelp() {
 }
 
 void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int mods) {
-	if (action != GLFW_PRESS) return;
+    ImGuiIO& io = ImGui::GetIO();
+	if (action != GLFW_PRESS || io.WantCaptureKeyboard) return;
 
 	// generic keys
 	if (key == GLFW_KEY_ESCAPE) finish = true;

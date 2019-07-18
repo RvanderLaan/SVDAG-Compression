@@ -53,8 +53,9 @@ void Camera::scroll_callback(double xoffset, double yoffset) {
 }
 
 void Camera::update(bool sticky) {
+    ImGuiIO& io = ImGui::GetIO();
 
-	if (_state == WT_PLAYING) {
+    if (_state == WT_PLAYING) {
 		_cam.pos = sl::point3f::zero();
 		_cam.target = sl::point3f::zero();
 		for (int i = 0; i < _wtInterpol; ++i) {
@@ -77,71 +78,76 @@ void Camera::update(bool sticky) {
 	glfwGetCursorPos(_glfwWindow, &tmpX, &tmpY);
 	_coords[0] = (float)tmpX; _coords[1] = (float)tmpY;
 
-	if(glfwGetKey(_glfwWindow, GLFW_KEY_SPACE) == GLFW_PRESS) {
-		reset();
-		return;
-	}
-	
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_U) == GLFW_PRESS) {
-		if (_cam.coordSyst == Z_UP) {
-			_initCam.coordSyst = Y_UP;
-			_initCam.up = sl::vector3f(0, 1, 0);
-		}
-		else {
-			_initCam.coordSyst = Z_UP;
-			_initCam.up = sl::vector3f(0, 0, 1);
-		}
-		reset();
-		return;
-	}
+	if (!io.WantCaptureKeyboard) {
+        if(glfwGetKey(_glfwWindow, GLFW_KEY_SPACE) == GLFW_PRESS) {
+            reset();
+            return;
+        }
 
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_C) == GLFW_PRESS) {
-		printf("Camera POS & TARGET: %.3f %.3f %.3f %.3f %.3f %.3f\n",
-			_cam.pos[0], _cam.pos[1], _cam.pos[2],
-			_cam.target[0], _cam.target[1], _cam.target[2]);
-	}
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_U) == GLFW_PRESS) {
+            if (_cam.coordSyst == Z_UP) {
+                _initCam.coordSyst = Y_UP;
+                _initCam.up = sl::vector3f(0, 1, 0);
+            }
+            else {
+                _initCam.coordSyst = Z_UP;
+                _initCam.up = sl::vector3f(0, 0, 1);
+            }
+            reset();
+            return;
+        }
 
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_W) == GLFW_PRESS) {
-		sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
-		_cam.pos += dir * _walkFactor;
-		_cam.target += dir * _walkFactor;
-		updateMatrices();
-	}
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_S) == GLFW_PRESS) {
-		sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
-		_cam.pos -= dir * _walkFactor;
-		_cam.target -= dir * _walkFactor;
-		updateMatrices();
-	}
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_A) == GLFW_PRESS) {
-		sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
-		dir = dir.cross(_cam.up);
-		_cam.pos -= dir * _walkFactor;
-		_cam.target -= dir * _walkFactor;
-		updateMatrices();
-	}
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_D) == GLFW_PRESS) {
-		sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
-		dir = -dir.cross(_cam.up);
-		_cam.pos -= dir * _walkFactor;
-		_cam.target -= dir * _walkFactor;
-		updateMatrices();
-	}
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_Q) == GLFW_PRESS) {
-	  sl::vector3f dir = (_cam.target - _cam.pos);
-	  float delta = 2.0f * 3.14f / 180.0f * 0.5;
-	  sl::rigid_body_map3f r = sl::linear_map_factory3f::rotation(_cam.up, delta);
-	  _cam.target = _cam.pos + r * dir;
-	  updateMatrices();
-	}
-	if (glfwGetKey(_glfwWindow, GLFW_KEY_E) == GLFW_PRESS) {
-	  sl::vector3f dir = (_cam.target - _cam.pos);
-	  float delta = -2.0f * 3.14f / 180.0f * 0.5;
-	  sl::rigid_body_map3f r = sl::linear_map_factory3f::rotation(_cam.up, delta);
-	  _cam.target = _cam.pos + r * dir;
-	  updateMatrices();
-	}
-	
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_C) == GLFW_PRESS) {
+            printf("Camera POS & TARGET: %.3f %.3f %.3f %.3f %.3f %.3f\n",
+                _cam.pos[0], _cam.pos[1], _cam.pos[2],
+                _cam.target[0], _cam.target[1], _cam.target[2]);
+        }
+
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_W) == GLFW_PRESS) {
+            sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
+            _cam.pos += dir * _walkFactor;
+            _cam.target += dir * _walkFactor;
+            updateMatrices();
+        }
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_S) == GLFW_PRESS) {
+            sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
+            _cam.pos -= dir * _walkFactor;
+            _cam.target -= dir * _walkFactor;
+            updateMatrices();
+        }
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_A) == GLFW_PRESS) {
+            sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
+            dir = dir.cross(_cam.up);
+            _cam.pos -= dir * _walkFactor;
+            _cam.target -= dir * _walkFactor;
+            updateMatrices();
+        }
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_D) == GLFW_PRESS) {
+            sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
+            dir = -dir.cross(_cam.up);
+            _cam.pos -= dir * _walkFactor;
+            _cam.target -= dir * _walkFactor;
+            updateMatrices();
+        }
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_Q) == GLFW_PRESS) {
+          sl::vector3f dir = (_cam.target - _cam.pos);
+          float delta = 2.0f * 3.14f / 180.0f * 0.5;
+          sl::rigid_body_map3f r = sl::linear_map_factory3f::rotation(_cam.up, delta);
+          _cam.target = _cam.pos + r * dir;
+          updateMatrices();
+        }
+        if (glfwGetKey(_glfwWindow, GLFW_KEY_E) == GLFW_PRESS) {
+          sl::vector3f dir = (_cam.target - _cam.pos);
+          float delta = -2.0f * 3.14f / 180.0f * 0.5;
+          sl::rigid_body_map3f r = sl::linear_map_factory3f::rotation(_cam.up, delta);
+          _cam.target = _cam.pos + r * dir;
+          updateMatrices();
+        }
+    }
+
+    if (io.WantCaptureMouse) {
+        return;
+    }
 	if (!ImGui::IsAnyWindowHovered() && !ImGui::IsAnyItemHovered()) {
 		if(glfwGetMouseButton(_glfwWindow, GLFW_MOUSE_BUTTON_1) == GLFW_PRESS) {
 			if(_gestureState != ROTATING) {
