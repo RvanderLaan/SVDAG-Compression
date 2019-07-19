@@ -132,4 +132,5 @@ private: // Internal tools
 	unsigned int cleanEmptyNodes();
 	void invertInvs(Node &n, int lev, bool inX, bool inY, bool inZ);
 
+    void symMergeAcrossAllLevels();
 };

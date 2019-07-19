@@ -1,0 +1,57 @@
+# Cross level merging
+
+- Build multi map of potential matches for each node, up to a certain depth (1/2 of max by default)
+- Add all nodes of level below the root to the list of nodes to check
+- For every level
+    - Rebuild multi-map if necessary (if depth of subtrees is smaller than those in multi-map)
+    - For every node to check (that has not been eliminated yet)
+        - For each other level higher up:
+            - For each potential match
+                - If equal through deep comparison
+                    - Store correspondences for all nodes in the duplicate subtrees
+        - If no match found
+            - Add to list of nodes to check next
+    - Update pointers of nodes in the level above
+    - Update pointers of nodes in lower levels to nodes in this level
+
+## Symmetric cross level merging
+
+- Same, for each symmetry option:
+    - Build match maps for each symmetry option
+    - Deep comparison for each symmetry option
+    - Also store symmetry option in correspondence
+    
+### -OR-
+- Convert to SDAG
+- Create multi-map of MirrorNode hashes
+- The same as normal cross level merging
+
+
+# Exploiting hidden geometry
+1. Normal based
+ - Voxels on the surface of a closed object only need to look right from the outside
+ - The part of the nodes that lay inside of the surface can be changed as we please
+2. Inside/outside based
+ - Any node on the inside of a closed surface can be changed as we please
+ 
+Question:
+ - How to implement this
+    1:
+    - Store normal in each node in the SVO
+    - When merging nodes, mark nodes as unusable if their normals differ greater than a threshold
+    - 
+    2:
+    - Inner nodes: Do subtree comparisons, but ignore the children that are hidden
+    - Leaf nodes:  Do child bit mask comparison, but ignore bits that are hidden
+    
+ - 
+ 
+ 
+ 
+# Lossy commpression:
+ - Currently only in low levels, on nodes that are referenced infrequently
+ - Todo: Noisiness of voxels and "create no holes, only fill them?"
+ - Can also use noisiness indicator for fake detail using cycles
+    - Wouldn't be useful for flat surfaces, but for organic material/smoke/particles
+ 
+ 
