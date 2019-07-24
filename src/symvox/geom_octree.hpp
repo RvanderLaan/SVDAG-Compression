@@ -59,6 +59,8 @@ public:  //////// Octree Node
 
 		sl::uint8_t childrenMirroredBitmask[3];
 		sl::uint8_t invariantBitmask;
+		// Indicates for every child whether it is inside or outside a surface
+		sl::uint8_t outsideMask;
 
 		// Constructor
         /**
@@ -81,6 +83,9 @@ public:  //////// Octree Node
 		inline void setChildMirrrorBit(int axis, int childId) { childrenMirroredBitmask[axis] |= (1U << childId); }
 		inline void unsetChildMirrrorBit(int axis, int childId) { childrenMirroredBitmask[axis] &= ~(1U << childId); }
 		inline void invChildMirrrorBit(int axis, int childId) { childrenMirroredBitmask[axis] ^= (1U << childId); }
+
+        inline bool getChildOutsideBit(int childId) const { return (outsideMask & (1U << childId)) != 0; }
+        inline void setChildOutsideBit(int childId) { outsideMask |= (1U << childId); }
 
 		Node mirror(bool x, bool y, bool z, bool applyToChildren = true) const;
 		Node getCanonical(bool &x, bool &y, bool &z) const;
@@ -133,4 +138,6 @@ private: // Internal tools
 	void invertInvs(Node &n, int lev, bool inX, bool inY, bool inZ);
 
     void symMergeAcrossAllLevels();
+
+    void hiddenGeometryFloodfill();
 };

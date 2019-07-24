@@ -160,7 +160,9 @@ int main(int argc, char ** argv) {
 		// This block will save both the single and multi level merged SVDAG
 		std::string path = sl::pathname_directory(inputFile);
 		std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
-		std::string basePath = path + sl::pathname_directory_separators() + baseName + "_" + std::to_string(nLevels);
+		std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
+
+		std::string sep = sl::pathname_directory_separators();
 
 		svdag.save(basePath + "-single.svdag");
 

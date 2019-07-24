@@ -22,6 +22,7 @@
 #include <set>
 #include <utility>
 #include <omp.h>
+#include <memory>
 
 #include <fstream>
 
@@ -157,107 +158,305 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
 }
 
 void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves) {
-	
-	if (!internalCall) printf("* Building SVO... "); fflush(stdout);
 
-	//_bbox = sl::conv_to<sl::aabox3f>::from(bbox);
-	auto minD = bbox[0], maxD = bbox[1];
-	sl::point3f minF = sl::point3f(minD[0], minD[1], minD[2]);
-	sl::point3f maxF = sl::point3f(maxD[0], maxD[1], maxD[2]);
-	_bbox = sl::aabox3f(minF, maxF);
+    bool markHiddenGeometry = true; // Assumption: Model is watertight, and tri normals are defined
+    sl::vector3f n0, n1, n2;
 
-	_levels = levels;
-	sl::vector3f sides =_bbox.half_side_lengths() * 2.0f;
-	_rootSide = sl::max(sl::max(sides[0], sides[1]), sides[2]);
-	
-	_data.resize(_levels);
+    if (!internalCall) printf("* Building SVO... ");
+    fflush(stdout);
+
+    //_bbox = sl::conv_to<sl::aabox3f>::from(bbox);
+    auto minD = bbox[0], maxD = bbox[1];
+    sl::point3f minF = sl::point3f(minD[0], minD[1], minD[2]);
+    sl::point3f maxF = sl::point3f(maxD[0], maxD[1], maxD[2]);
+    _bbox = sl::aabox3f(minF, maxF);
+
+    _levels = levels;
+    sl::vector3f sides = _bbox.half_side_lengths() * 2.0f;
+    _rootSide = sl::max(sl::max(sides[0], sides[1]), sides[2]);
+
+    _data.resize(_levels);
 
     Node root;
-	_data[0].push_back(root);
+    _data[0].push_back(root);
 
-	struct QueueItem {
-		QueueItem(id_t id, sl::uint8_t l, sl::point3d c) : nodeID(id), level(l), center(c) {}
-		id_t nodeID;
-		sl::uint8_t level;
-		sl::point3d center;
-	};
-	sl::point3d childrenCenters[8];
-	std::stack<QueueItem> queue;
+    struct QueueItem {
+        QueueItem(id_t id, sl::uint8_t l, sl::point3d c) : nodeID(id), level(l), center(c) {}
 
-	if(!internalCall) _clock.restart();
+        id_t nodeID;
+        sl::uint8_t level;
+        sl::point3d center;
+    };
+    sl::point3d childrenCenters[8];
+    std::stack<QueueItem> queue;
 
-	int stepLogger = (int)round(_scene->getNRawTriangles() / 10.f);
+    if (!internalCall) _clock.restart();
+
+    int stepLogger = (int) round(_scene->getNRawTriangles() / 10.f);
     // For every triangle...
     for (std::size_t iTri = 0; iTri < _scene->getNRawTriangles(); iTri++) {
-		if (!internalCall && (iTri % stepLogger == 0)) {
-			printf("%.0f%%..", round(100.f * (iTri / (float)_scene->getNRawTriangles())));
-			fflush(stdout);
-		}
-		unsigned int triMatId;
-		if (putMaterialIdInLeaves) triMatId = (unsigned int)_scene->getTriangleMaterialId(iTri);
+        if (!internalCall && (iTri % stepLogger == 0)) {
+            printf("%.0f%%..", round(100.f * (iTri / (float) _scene->getNRawTriangles())));
+            fflush(stdout);
+        }
+        unsigned int triMatId;
+        if (putMaterialIdInLeaves) triMatId = (unsigned int) _scene->getTriangleMaterialId(iTri);
 
         // Push the root node to a queue
-		queue.push(QueueItem(0, 0, bbox.center()));
+        queue.push(QueueItem(0, 0, bbox.center()));
 
         // Traverse through all nodes in the tree that intersect with the triangle, starting at the root
-		while (!queue.empty()) {
-			const QueueItem qi = queue.top(); queue.pop();
+        while (!queue.empty()) {
+            const QueueItem qi = queue.top();
+            queue.pop();
 
             // Store of the position (center) of all child nodes of the current node
-			double k = getHalfSideD(qi.level + 1);
-			childrenCenters[PXPYPZ] = qi.center + sl::vector3d(+k, +k, +k);
-			childrenCenters[PXPYNZ] = qi.center + sl::vector3d(+k, +k, -k);
-			childrenCenters[PXNYPZ] = qi.center + sl::vector3d(+k, -k, +k);
-			childrenCenters[PXNYNZ] = qi.center + sl::vector3d(+k, -k, -k);
-			childrenCenters[NXPYPZ] = qi.center + sl::vector3d(-k, +k, +k);
-			childrenCenters[NXPYNZ] = qi.center + sl::vector3d(-k, +k, -k);
-			childrenCenters[NXNYPZ] = qi.center + sl::vector3d(-k, -k, +k);
-			childrenCenters[NXNYNZ] = qi.center + sl::vector3d(-k, -k, -k);
+            double k = getHalfSideD(qi.level + 1);
+            childrenCenters[PXPYPZ] = qi.center + sl::vector3d(+k, +k, +k);
+            childrenCenters[PXPYNZ] = qi.center + sl::vector3d(+k, +k, -k);
+            childrenCenters[PXNYPZ] = qi.center + sl::vector3d(+k, -k, +k);
+            childrenCenters[PXNYNZ] = qi.center + sl::vector3d(+k, -k, -k);
+            childrenCenters[NXPYPZ] = qi.center + sl::vector3d(-k, +k, +k);
+            childrenCenters[NXPYNZ] = qi.center + sl::vector3d(-k, +k, -k);
+            childrenCenters[NXNYPZ] = qi.center + sl::vector3d(-k, -k, +k);
+            childrenCenters[NXNYNZ] = qi.center + sl::vector3d(-k, -k, -k);
+
+            if (markHiddenGeometry) {
+                _scene->getTriangleNormals(iTri, n0, n1, n2);
+            }
 
             // Traverse through all child nodes
-			Node & node = _data[qi.level][qi.nodeID];
-			for (int i = 7; i >= 0; --i) {
+            Node &node = _data[qi.level][qi.nodeID];
+            for (int i = 7; i >= 0; --i) {
                 // If the triangle intersects with this child...
-				if (_scene->getTrianglePtr(iTri) != NULL && testTriBox(childrenCenters[i], k, _scene->getTrianglePtr(iTri))) {
+                if (_scene->getTrianglePtr(iTri) != NULL &&
+                    testTriBox(childrenCenters[i], k, _scene->getTrianglePtr(iTri))) {
                     // Mark the child mask
                     node.setChildBit(i);
                     // If there is no child node inserted yet, and it's not a leaf, insert a child node
-					if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
-						node.children[i] = (id_t)_data[qi.level + 1].size();
+                    if (!node.existsChildPointer(i) && (qi.level < (_levels - 1))) {
+                        node.children[i] = (id_t) _data[qi.level + 1].size();
                         _data[qi.level + 1].emplace_back();
-						_nNodes++;
-						if (leavesCenters!=NULL && (qi.level == (_levels - 2))) leavesCenters->push_back(childrenCenters[i]);
-					}
+                        _nNodes++;
+                        if (leavesCenters != NULL && (qi.level == (_levels - 2)))
+                            leavesCenters->push_back(childrenCenters[i]);
+                    }
                     // If this child is not a leaf, continue intersecting its children in a future iteration
-					if((qi.level+1U) < _levels) queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
-					else {
-						if (putMaterialIdInLeaves) node.children[i] = (id_t)triMatId;
+                    if ((qi.level + 1U) < _levels)
+                        queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
+                    else {
+                        if (putMaterialIdInLeaves) node.children[i] = (id_t) triMatId;
 #if 0 // outputs a debug obj of voxels as points with their colours
-						sl::color3f c;
-						_scene->getTriangleColor(iTri, c);
-						printf("v %f %f %f %f %f %f\n", childrenCenters[i][0], childrenCenters[i][1], childrenCenters[i][2], c[0], c[1], c[2]);
+                        sl::color3f c;
+                        _scene->getTriangleColor(iTri, c);
+                        printf("v %f %f %f %f %f %f\n", childrenCenters[i][0], childrenCenters[i][1], childrenCenters[i][2], c[0], c[1], c[2]);
 #endif
-					}
-				}
-			}
-		}
-	}
+                    }
+                }
 
-	cleanEmptyNodes();
-	if (!internalCall) _stats.buildSVOTime = _clock.elapsed();
+                // Mark whether nodes are inside or outside of the surface, even for empty regions
+                if (markHiddenGeometry) {
 
-	// compute NVoxels
-	for (id_t i = 0; i < _data[_levels - 1].size(); ++i) {
-		_nVoxels += _data[_levels - 1][i].getNChildren();
-	}
-	
-	_state = S_SVO;
-	_stats.nNodesSVO = _nNodes;
-	_stats.nNodesLastLevSVO = _data[_levels - 1].size();
-	_stats.simulatedEncodedSVOSize = (_stats.nNodesSVO - _stats.nNodesLastLevSVO) * 4;
-	_stats.nTotalVoxels = _nVoxels;
+                }
+            }
+        }
+    }
 
-	if(!internalCall) printf("OK! [%s]\n",sl::human_readable_duration(_stats.buildSVOTime).c_str());
+    cleanEmptyNodes();
+    if (!internalCall) _stats.buildSVOTime = _clock.elapsed();
+
+    // compute NVoxels
+    for (id_t i = 0; i < _data[_levels - 1].size(); ++i) {
+        _nVoxels += _data[_levels - 1][i].getNChildren();
+    }
+
+    _state = S_SVO;
+    _stats.nNodesSVO = _nNodes;
+    _stats.nNodesLastLevSVO = _data[_levels - 1].size();
+    _stats.simulatedEncodedSVOSize = (_stats.nNodesSVO - _stats.nNodesLastLevSVO) * 4;
+    _stats.nTotalVoxels = _nVoxels;
+
+    if(!internalCall) printf("OK! [%s]\n",sl::human_readable_duration(_stats.buildSVOTime).c_str());
+
+}
+
+void GeomOctree::hiddenGeometryFloodfill() {
+    printf("Starting flood fill...\n");
+    if (_state != S_SVO) {
+        printf("Not in SVO format, aborting!\n");
+        return;
+    }
+
+    // Flood fill
+    // Starting at the top left of the scene
+    // - (So we need to traverse down from the root to find the deeper nodes at the top left position
+
+
+
+    // Find the deepest node at the top left of the scene
+    id_t nextChildIndex = 0; // root node at index 0 of level 0
+    unsigned int currentLevel = 0;
+    for (unsigned int lev = 0; lev < _levels; ++lev) {
+        Node &node = _data[lev][nextChildIndex];
+        currentLevel = lev;
+        if (node.existsChild(NXNYNZ)) {
+            nextChildIndex = _data[lev][nextChildIndex].children[NXNYNZ];
+        } else {
+            break;
+        }
+    }
+
+    // No children: It's outside
+    if (!_data[currentLevel][nextChildIndex].hasChildren()) {
+        _data[currentLevel][nextChildIndex].isInside = false;
+    } else {
+        printf("Deepest top left node intersects with geometry, not dealing with this now... Aborting flood fill\n");
+        return;
+    }
+
+    // From this node, start a flood fill:
+    // Always traverse to the deepest child of a node
+    // For every one of its neighbours, if it hasn't been visited yet, check if it intersects with geometry
+    // If it doesn't intersect, then continue the floodfill for its neighbours
+
+    std::map<Node, bool> visitMap;
+
+    struct TravNode {
+        TravNode(std::shared_ptr<TravNode> prnt, id_t pIdx, ChildrenIdx i, unsigned int l)
+            : parent(std::move(std::move(prnt))), parentIdx(pIdx), childIdx(i), level(l) {}
+        std::shared_ptr<TravNode> parent;
+        id_t parentIdx;
+        ChildrenIdx childIdx;
+        unsigned int level;
+    };
+
+    auto getNode = [&](const TravNode &tn) {
+        Node& p = _data[tn.level - 1][tn.parentIdx];
+        return (Node&) _data[tn.level][p.children[tn.childIdx]];
+    };
+
+    TravNode nullTravNode(NULL, 0, NXNYNZ, -1);
+
+    // Neighbour finding algorithm: https://geidav.wordpress.com/2017/12/02/advanced-octrees-4-finding-neighbor-nodes/
+
+    std::function<TravNode (const TravNode &tn, NeighbourIdx dir)> getNeighbourGrtrEqSz;
+    getNeighbourGrtrEqSz = [&](const TravNode &tn, const NeighbourIdx dir) {
+        if (tn.level == 0) return nullTravNode; // Root node, cannot go further up
+        const Node& parent = _data[tn.level - 1][tn.parentIdx];
+        if (dir == NeighbourIdx::NX) {
+            // If tn is a child at positive x, return a neighbour within the same parent at positive x
+            if (tn.childIdx == ChildrenIdx::PXNYNZ) return TravNode(tn.parent, tn.parentIdx, NXNYNZ, tn.level);
+            if (tn.childIdx == ChildrenIdx::PXPYNZ) return TravNode(tn.parent, tn.parentIdx, NXPYNZ, tn.level);
+            if (tn.childIdx == ChildrenIdx::PXNYPZ) return TravNode(tn.parent, tn.parentIdx, NXNYPZ, tn.level);
+            if (tn.childIdx == ChildrenIdx::PXPYPZ) return TravNode(tn.parent, tn.parentIdx, NXPYPZ, tn.level);
+
+            // Else, try to find the neighbour of the parent in this direction
+            TravNode pNb = getNeighbourGrtrEqSz(*(tn.parent), dir);
+            // Return it if it's the nullNode, or it's a leaf (note: parent not cannot be at leaf level, so only need to check if it's an inner-leaf)
+            if (pNb.parent == NULL || !getNode(pNb).hasChildren()) return pNb;
+
+            // If the neighbour of the parent is not a leaf node, return its child that is the closest to the given node
+            auto pNbPtr = std::make_shared<TravNode>(pNb);
+            id_t pNbIdx = _data[pNb.level - 1][pNb.parentIdx].children[pNb.childIdx];
+            if (tn.childIdx == NXNYNZ) return TravNode(pNbPtr, pNbIdx, PXNYNZ, pNb.level + 1);
+            if (tn.childIdx == NXPYNZ) return TravNode(pNbPtr, pNbIdx, PXPYNZ, pNb.level + 1);
+            if (tn.childIdx == NXNYPZ) return TravNode(pNbPtr, pNbIdx, PXNYPZ, pNb.level + 1);
+            if (tn.childIdx == NXPYPZ) return TravNode(pNbPtr, pNbIdx, PXPYPZ, pNb.level + 1);
+        } else {
+            // Todo: Cover other direction (NY, NZ, PX, PY, PZ) or abstract it
+        }
+        return nullTravNode;
+    };
+
+    static std::stack<TravNode> candidates;
+    auto getNeighboursSmSz = [&](const TravNode &tn, const TravNode &tnNb, const NeighbourIdx dir, std::vector<TravNode> &neighbours) {
+        if (tnNb.parent != NULL) candidates.push(tnNb);
+
+        while (!candidates.empty()) {
+            const TravNode &can = candidates.top(); candidates.pop();
+            const Node &canNode = getNode(can);
+
+            if (!canNode.hasChildren() || can.level == _levels - 1) {
+                // if it's a leaf, add as a neighbour
+                neighbours.emplace_back(can);
+            } else {
+                // else, add children in the right direction as candidates
+                if (dir == NX) {
+                    auto canPtr = std::make_shared<TravNode>(can);
+                    id_t canIdx = _data[can.level - 1][can.parentIdx].children[can.childIdx];
+                    candidates.push(TravNode(canPtr, canIdx, PXNYNZ, can.level + 1);
+                    candidates.push(TravNode(canPtr, canIdx, PXPYNZ, can.level + 1);
+                    candidates.push(TravNode(canPtr, canIdx, PXNYPZ, can.level + 1);
+                    candidates.push(TravNode(canPtr, canIdx, PXPYPZ, can.level + 1);
+                } else {
+                    // Todo: Cover other direction (NY, NZ, PX, PY, PZ) or abstract it
+                }
+            }
+        }
+    };
+
+
+
+    auto getNeighbours = [&](const TravNode &tn, std::vector<TravNode> &neighbours) {
+        // Get neighbours for all directions
+        for (int dir = 0; dir <= PZ; ++dir) {
+            // Get the neighbour directly next to it
+            const TravNode &nb = getNeighbourGrtrEqSz(tn, (NeighbourIdx) dir);
+            // If it's a valid neighbour, find the nodes on the same level as the node we started with
+            // Todo: instead of the neighbours next to it, we need to find the deepest neighbours
+            if (nb.parent != NULL) { // If it's not a nullNode
+                getNeighboursSmSz(tn, nb, (NeighbourIdx) dir, neighbours);
+            }
+        }
+    };
+
+
+    auto getDeepestChild = [&](TravNode &tn, ChildrenIdx c) {
+        Node& p = _data[tn.level - 1][tn.parentIdx];
+        if (p.existsChildPointer(c)) {
+            return p.children[c];
+        }
+        return (id_t) -1;
+    };
+
+    TravNode rootTrav(NULL, 0, NXNYNZ, 0);
+
+
+    std::stack<TravNode> travQueue;
+    travQueue.push(rootTrav);
+
+    while (!travQueue.empty()) {
+        const TravNode travNode = travQueue.top(); travQueue.pop();
+
+        const Node n = getNode(travNode);
+
+        // If it's a leaf or 'inner leaf' (no children), mark as visited
+        if (travNode.level == _levels - 1 || !n.hasChildren()) {
+            visitMap[n] = true;
+
+            // For all neighbours
+            // Todo: There is a variable amount of neighbours, think of it like a quadtree
+            for (unsigned int i = 0; i < 8; ++i) {
+                id_t nbi = getNeighbour(travNode, (ChildrenIdx) i);
+                // It has no neighbour
+                if (nbi != -1) {
+                    const Node& nb =
+                }
+
+            }
+
+        } else {
+            // Not a leaf, so traverse down further until a leaf is found
+            // Starting with the child to the top left
+
+        }
+
+
+
+    }
+
+
+    // After all of the deepest nodes have been marked as inside/outside, propagate those values to their parents
 }
 
 /**
@@ -864,22 +1063,22 @@ void GeomOctree::symMergeAcrossAllLevels() {
             uint64_t nAKey = 0; // computeNodeKey(nA, currentMatchDepth);
             for (unsigned int levB = 0; levB < levA; ++levB) {
                 for (int symIndex = 0; symIndex < 8; ++symIndex) {
-//                    auto matchResult = matchMaps[symIndex][levB].equal_range(nAKey);
-//                    for (auto it = matchResult.first; it != matchResult.second; ++it) {
-//                        id_t idB = it->second;
-//                        bool areSubtreesEqual = false; // compareSymSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
-//                        if (areSubtreesEqual) {
-//                            foundMatch = true;
-//                            multiLevelCorrespondences[levA][idA] = std::make_pair(levB, std::make_pair(idB, symIndex));
-//                            // Append all nodes in this subtree to the nodes that can be removed
-//                            for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
-//                                // Todo: take into account mirror bits of child pointers
-////                                multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
-//                            }
-//                            break;
-//                        }
-//                    }
-//                    if (foundMatch) break;
+                    auto matchResult = matchMaps[symIndex][levB].equal_range(nAKey);
+                    for (auto it = matchResult.first; it != matchResult.second; ++it) {
+                        id_t idB = it->second;
+                        bool areSubtreesEqual = false; // compareSymSubtrees(levA, levB, nA, nB, nodesInCurSubtree);
+                        if (areSubtreesEqual) {
+                            foundMatch = true;
+                            multiLevelCorrespondences[levA][idA] = std::make_pair(levB, std::make_pair(idB, symIndex));
+                            // Append all nodes in this subtree to the nodes that can be removed
+                            for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
+                                // Todo: take into account mirror bits of child pointers
+//                                multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
+                            }
+                            break;
+                        }
+                    }
+                    if (foundMatch) break;
                 }
                 if (foundMatch) break;
             }
