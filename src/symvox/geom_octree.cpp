@@ -287,40 +287,16 @@ void GeomOctree::hiddenGeometryFloodfill() {
         return;
     }
 
-    // Flood fill
-    // Starting at the top left of the scene
-    // - (So we need to traverse down from the root to find the deeper nodes at the top left position
-
-
-
-    // Find the deepest node at the top left of the scene
-    id_t nextChildIndex = 0; // root node at index 0 of level 0
-    unsigned int currentLevel = 0;
-    for (unsigned int lev = 0; lev < _levels; ++lev) {
-        Node &node = _data[lev][nextChildIndex];
-        currentLevel = lev;
-        if (node.existsChild(NXNYNZ)) {
-            nextChildIndex = _data[lev][nextChildIndex].children[NXNYNZ];
-        } else {
-            break;
-        }
-    }
-
-    // No children: It's outside
-    if (!_data[currentLevel][nextChildIndex].hasChildren()) {
-        _data[currentLevel][nextChildIndex].isInside = false;
-    } else {
-        printf("Deepest top left node intersects with geometry, not dealing with this now... Aborting flood fill\n");
-        return;
-    }
-
-    // From this node, start a flood fill:
-    // Always traverse to the deepest child of a node
+    ///// Idea //////
+    // From the most NXNYNZ node, start a flood fill:
     // For every one of its neighbours, if it hasn't been visited yet, check if it intersects with geometry
     // If it doesn't intersect, then continue the floodfill for its neighbours
 
+    ////// Helper structs/functions ////////
+    // Keep track of which nodes have been visited
     std::map<Node, bool> visitMap;
 
+    // Contains all info to find a node and a reference to its parent
     struct TravNode {
         TravNode(std::shared_ptr<TravNode> prnt, id_t pIdx, ChildrenIdx i, unsigned int l)
             : parent(std::move(std::move(prnt))), parentIdx(pIdx), childIdx(i), level(l) {}
@@ -330,12 +306,14 @@ void GeomOctree::hiddenGeometryFloodfill() {
         unsigned int level;
     };
 
+    TravNode nullTravNode(NULL, 0, NXNYNZ, -1);
+
     auto getNode = [&](const TravNode &tn) {
+        if (tn.level == 0) return _data[0][0]; // Root node
+        assert((tn.level < 0 || tn.level > _levels) && "getNode called for nullTravNode");
         Node& p = _data[tn.level - 1][tn.parentIdx];
         return (Node&) _data[tn.level][p.children[tn.childIdx]];
     };
-
-    TravNode nullTravNode(NULL, 0, NXNYNZ, -1);
 
     // Neighbour finding algorithm: https://geidav.wordpress.com/2017/12/02/advanced-octrees-4-finding-neighbor-nodes/
 
@@ -378,16 +356,17 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
             if (!canNode.hasChildren() || can.level == _levels - 1) {
                 // if it's a leaf, add as a neighbour
+                // todo: Would be more efficient to check if node has already been visited here
                 neighbours.emplace_back(can);
             } else {
                 // else, add children in the right direction as candidates
                 if (dir == NX) {
                     auto canPtr = std::make_shared<TravNode>(can);
                     id_t canIdx = _data[can.level - 1][can.parentIdx].children[can.childIdx];
-                    candidates.push(TravNode(canPtr, canIdx, PXNYNZ, can.level + 1);
-                    candidates.push(TravNode(canPtr, canIdx, PXPYNZ, can.level + 1);
-                    candidates.push(TravNode(canPtr, canIdx, PXNYPZ, can.level + 1);
-                    candidates.push(TravNode(canPtr, canIdx, PXPYPZ, can.level + 1);
+                    candidates.push(TravNode(canPtr, canIdx, PXNYNZ, can.level + 1));
+                    candidates.push(TravNode(canPtr, canIdx, PXPYNZ, can.level + 1));
+                    candidates.push(TravNode(canPtr, canIdx, PXNYPZ, can.level + 1));
+                    candidates.push(TravNode(canPtr, canIdx, PXPYPZ, can.level + 1));
                 } else {
                     // Todo: Cover other direction (NY, NZ, PX, PY, PZ) or abstract it
                 }
@@ -395,68 +374,97 @@ void GeomOctree::hiddenGeometryFloodfill() {
         }
     };
 
-
-
     auto getNeighbours = [&](const TravNode &tn, std::vector<TravNode> &neighbours) {
         // Get neighbours for all directions
         for (int dir = 0; dir <= PZ; ++dir) {
             // Get the neighbour directly next to it
             const TravNode &nb = getNeighbourGrtrEqSz(tn, (NeighbourIdx) dir);
             // If it's a valid neighbour, find the nodes on the same level as the node we started with
-            // Todo: instead of the neighbours next to it, we need to find the deepest neighbours
             if (nb.parent != NULL) { // If it's not a nullNode
                 getNeighboursSmSz(tn, nb, (NeighbourIdx) dir, neighbours);
             }
         }
     };
 
-
-    auto getDeepestChild = [&](TravNode &tn, ChildrenIdx c) {
-        Node& p = _data[tn.level - 1][tn.parentIdx];
-        if (p.existsChildPointer(c)) {
-            return p.children[c];
-        }
-        return (id_t) -1;
-    };
-
+    ///// Finding node to start the floodfill /////
     TravNode rootTrav(NULL, 0, NXNYNZ, 0);
+    TravNode startTrav = nullTravNode;
+    std::shared_ptr<TravNode> prevParent = std::make_shared<TravNode>(rootTrav);
 
+    // Find the deepest node at the most negative corner of the scene
+    // Todo: Positive corner has a higher probability of being empty
+    id_t curNodeIdx = 0;
+    for (unsigned int lev = 0; lev < _levels; ++lev) {
+        Node &node = _data[lev][curNodeIdx];
+        if (node.existsChildPointer(NXNYNZ)) {
+            // Create new TravNode containing parent info
+            TravNode curNode(prevParent, curNodeIdx, NXNYNZ, lev + 1);
+            prevParent = std::make_shared<TravNode>(curNode);
+            curNodeIdx = _data[lev][curNodeIdx].children[NXNYNZ];
+            // Replace the start node with its child
+            startTrav = curNode;
+        }
+    }
 
-    std::stack<TravNode> travQueue;
-    travQueue.push(rootTrav);
+    // No children: It's outside
+    if (getNode(startTrav).hasChildren()) {
+        printf("Deepest top left node intersects with geometry, not dealing with this now... Aborting flood fill\n");
+        return;
+    }
 
-    while (!travQueue.empty()) {
-        const TravNode travNode = travQueue.top(); travQueue.pop();
+    // Flood fill, using a queue of nodes that need to be visited
+    std::vector<TravNode> neighbours;
 
+    std::stack<TravNode> queue;
+    queue.push(rootTrav);
+
+    while (!queue.empty()) {
+        const TravNode travNode = queue.top(); queue.pop();
         const Node n = getNode(travNode);
 
-        // If it's a leaf or 'inner leaf' (no children), mark as visited
-        if (travNode.level == _levels - 1 || !n.hasChildren()) {
-            visitMap[n] = true;
+        // Mark as visited
+        visitMap[n] = true;
 
-            // For all neighbours
-            // Todo: There is a variable amount of neighbours, think of it like a quadtree
-            for (unsigned int i = 0; i < 8; ++i) {
-                id_t nbi = getNeighbour(travNode, (ChildrenIdx) i);
-                // It has no neighbour
-                if (nbi != -1) {
-                    const Node& nb =
+        // For all neighbours
+        neighbours.clear();
+        getNeighbours(travNode, neighbours);
+        for (const auto &nb : neighbours) {
+            const Node &nbN = getNode(nb);
+            Node nbP = getNode(*(nb.parent));
+            // If not yet visited
+            if (visitMap.find(nbN) == visitMap.end()) {
+                visitMap[nbN] = true; // mark as visited
+                // and if neighbour doesn't intersect with geometry
+                if (!nbN.hasChildren()) {
+                    // Add to queue to visit next
+                    queue.push(nb);
+                    // mark as being outside of any geometry in parent
+                    nbP.setChildOutsideBit(nb.childIdx);
+
+                    // Todo: To set the outsideMask of the leaves themselves, we need to know the direction
+//                    nbN.setChildOutsideBit(??dir??)
+                    // not sure if necessary.. needs some more thought
+                    // Todo: Also consider what to happens with multiple build steps!
                 }
-
             }
-
-        } else {
-            // Not a leaf, so traverse down further until a leaf is found
-            // Starting with the child to the top left
-
         }
+    }
 
-
-
+    // After all of the deepest nodes have been marked as inside/outside, propagate those values to their parents
+    for (int lev = _levels - 1; lev >= 0; --lev) {
+        for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {
+            for (int c = 0; c < 8; ++c) {
+                Node &node = _data[lev][nodeId];
+                if (node.existsChild(c)
+                    && _data[lev + 1][node.children[c]].isInside()) {
+                    node.setChildOutsideBit(c);
+                }
+            }
+        }
     }
 
 
-    // After all of the deepest nodes have been marked as inside/outside, propagate those values to their parents
+    printf("Done with flood fill!\n");
 }
 
 /**

@@ -86,6 +86,7 @@ public:  //////// Octree Node
 
         inline bool getChildOutsideBit(int childId) const { return (outsideMask & (1U << childId)) != 0; }
         inline void setChildOutsideBit(int childId) { outsideMask |= (1U << childId); }
+        inline bool isInside() { return outsideMask == 0; }
 
 		Node mirror(bool x, bool y, bool z, bool applyToChildren = true) const;
 		Node getCanonical(bool &x, bool &y, bool &z) const;
