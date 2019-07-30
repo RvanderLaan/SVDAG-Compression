@@ -61,6 +61,7 @@ uniform isamplerBuffer childIndir;
 uniform int viewerRenderMode;
 uniform uint selectedVoxelIndex;
 uniform bool randomColors;
+uniform vec3 lightPos;
 #elif SHADOW_MODE
 uniform sampler2D hitPosTex;
 uniform sampler2D hitNormTex;
@@ -645,6 +646,7 @@ void main() {
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
 	vec4 result = trace_ray(r, t_min_max, projectionFactor);
+	const float epsilon = 1E-6f;
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -655,6 +657,43 @@ void main() {
 			t = result.x / length(sceneBBoxMax-sceneBBoxMin);
 		else if (viewerRenderMode == 2) // VOXEL LEVELS
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
+		else if (viewerRenderMode == 3) { // PRETTY
+			// Hit position = camera origin + depth * camera direction
+			vec3 hitPos = r.o + result.x * r.d;
+
+			const float cellSize = result.y;
+
+			// (voxel) Surface normal:
+			vec3 voxCenter = hitPos - mod(hitPos + epsilon, cellSize) + cellSize / 2.0;
+			vec3 hitNorm = (normalize(voxCenter - hitPos));
+			// Looks like hitNorm needs to be inverted, but not working for all sides of voxels yet...
+
+			
+			// Trace ray to light pos
+			const vec3 p = hitPos + -r.d * result.y;
+			r.o = lightPos;
+			const vec3 lightToP = p - lightPos;
+			const float lightToPLength = length(lightToP);
+			r.d = normalize(lightToP);
+			vec2 t_min_max = vec2(0, lightToPLength);
+			vec4 shd_result = trace_ray(r, t_min_max, projectionFactor);
+
+			// Light falloff
+			// Base color: Based on depth
+			float baseCol = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
+//			baseCol -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+
+			// Diffuse shading
+			vec3 lightDir = normalize(lightPos - hitPos);
+			baseCol *= max(dot(hitNorm, normalize(lightPos - hitPos)), 0.5);
+
+			t = baseCol;
+
+//			==> Enable this for shadows (needs correct normal to work properly though)
+//			t = (shd_result.x > 0) ? baseCol / 2.0 : baseCol;
+
+//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+		}
 	
 		color = vec3(t, t, t);
 

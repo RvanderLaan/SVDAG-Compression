@@ -80,6 +80,7 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 	if (key == GLFW_KEY_R) renderer->nextViewerRenderMode();
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
 	if (key == GLFW_KEY_K) renderer->toggleRandomColors();
+	if (key == GLFW_KEY_L) renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
 
 	if (key == GLFW_KEY_F1) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::AO);
 	if (key == GLFW_KEY_F2) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::DEPTH);
@@ -209,7 +210,11 @@ void handleImgui() {
 	float fovInput = renderer->getFovH();
 	float walkFactorInput = renderer->getCamera()->getWalkFactor();
 
-	const static char* renderModes[] = { "VIEWER", "DEPTH", "SHADOW", "AO" };
+	const sl::point3f &camPos = renderer->getCamera()->getCurrentConfig().pos;
+	float camPosInput[]{ 0,0,0 };
+	camPosInput[0] = camPos[0]; camPosInput[1] = camPos[1]; camPosInput[2] = camPos[2];
+
+	const static char* renderModes[] = { "ITERATIONS", "DEPTH", "LEVELS", "PRETTY" };
 	int renderModeInput = renderer->getViewerRenderMode();
 
 	ImGui::Begin("SymVox - Fork by RvanderLaan");
@@ -244,9 +249,19 @@ void handleImgui() {
 	if (ImGui::SliderFloat("Move speed", &walkFactorInput, 0.0f, 4.0f))
 		renderer->getCamera()->setWalkFactor(walkFactorInput);
 
+	if (ImGui::InputFloat3("Camera position", camPosInput, 2)) {
+		renderer->getCamera()->getCurrentConfig().pos[0] = camPosInput[0];
+		renderer->getCamera()->getCurrentConfig().pos[1] = camPosInput[1];
+		renderer->getCamera()->getCurrentConfig().pos[2] = camPosInput[2];
+	}
+
 
 	if (ImGui::Combo("Render mode", &renderModeInput, renderModes, IM_ARRAYSIZE(renderModes))) {
 		renderer->setViewerRenderMode(renderModeInput);
+	}
+
+	if (ImGui::Button("Set light pos at camera")) {
+		renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
 	}
 
 	// todo: show count, # references (per level), etc. + delete button

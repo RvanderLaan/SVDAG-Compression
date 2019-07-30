@@ -84,7 +84,7 @@ public:
 	inline void incGPUTraversalMaxIters(unsigned int k = 1) { setGPUTraversalMaxIters(_gpuTraversalMaxIters + k); }
 	inline void decGPUTraversalMaxIters(unsigned int k = 1) { setGPUTraversalMaxIters(_gpuTraversalMaxIters - k); }
 
-	inline void nextViewerRenderMode() { _viewerRenderMode = (_viewerRenderMode < 2) ? _viewerRenderMode + 1 : 0; }
+	inline void nextViewerRenderMode() { _viewerRenderMode = (_viewerRenderMode < 3) ? _viewerRenderMode + 1 : 0; }
 	inline void setViewerRenderMode(int mode) { _viewerRenderMode = mode; }
 	inline int getViewerRenderMode() { return _viewerRenderMode; }
 	inline void setLightPos(sl::point3f p) { _lightPos = p; }
