@@ -41,7 +41,7 @@ public:  //////// Definitions
 		NXNYNZ = 0
 	};
 
-	enum NeighbourIdx {
+	enum DirectionIdx {
 	    PZ = 5,
 	    PY = 4,
 	    PX = 3,
@@ -49,6 +49,9 @@ public:  //////// Definitions
 	    NY = 1,
 	    NX = 0
 	};
+
+
+
 
 public:  //////// Octree Node
 	struct Node {

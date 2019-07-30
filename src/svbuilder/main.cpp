@@ -92,6 +92,7 @@ int main(int argc, char ** argv) {
 
     bool lossy = false;
 	bool multiLevel = false;
+	bool exploitHiddenGeom = false;
 
 	for (int i = 4; i < argc; ++i) {
 		std::string arg = argv[i];
@@ -99,6 +100,8 @@ int main(int argc, char ** argv) {
 			lossy = true;
 		else if (arg == "-cross-level-merging" || arg == "-c")
 			multiLevel = true;
+        if (arg == "--hidden-geometry" || arg == "-h")
+            exploitHiddenGeom = true;
 	}
 
 	GeomOctree octree(&scene);
@@ -115,6 +118,7 @@ int main(int argc, char ** argv) {
 	if (levelStep == 0) {
         if (!isLas) {
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
+            if (exploitHiddenGeom) octree.hiddenGeometryFloodfill();
         } else {
             octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
         }

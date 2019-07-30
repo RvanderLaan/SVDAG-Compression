@@ -45,10 +45,18 @@ Question:
     - Leaf nodes:  Do child bit mask comparison, but ignore bits that are hidden
     
  - 
+
+ ## Current status
+ - Flood fill from a corner of the scene, marking all nodes on the outside with a bitmask in their parent
+ - How to ignore the inside children during subtree comparison?
+    - Single level merging: In the comparator of two nodes, take the AND of the outside masks, only compare those children
+    - No straightforward compatibility with cross-level merging, since the hashes are precomputed
+        - Could maybe pre-compute all hash combinations (2^8 match maps), which is O(256) time increase
+    - Problem: Can't sort nodes anymore (so can't put them in a map)
+        - Since the comparison between any two nodes is dynamic: ChildMask & OutsideMask
+        - Therefore, single-level merging doesn't work in the way it is currently implemented
  
- 
- 
-# Lossy commpression:
+# Lossy compression:
  - Currently only in low levels, on nodes that are referenced infrequently
  - Todo: Noisiness of voxels and "create no holes, only fill them?"
  - Can also use noisiness indicator for fake detail using cycles
