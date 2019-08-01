@@ -119,15 +119,17 @@ public:
 	void buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL, bool putMaterialIdInLeaves = false);
     void buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall = false, std::vector< sl::point3d > * leavesCenters = NULL);
     void toDAG(bool internalCall = false);
-    void toLossyDAG(bool internalCall = false);
-    unsigned int mergeAcrossAllLevels();
-    unsigned int findAllSymDuplicateSubtrees();
-    bool compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> &nodesInSubtree);
-    bool compareSymSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, bool sX, bool sY, bool sZ);
-    void removeSubtreeAndUpdatePointers(unsigned int levA, unsigned int levB, Node &nA, Node &nB);
     void toSDAG(bool internalCall = false, bool skipSymmetry = false);
 	void toSDAGCanonical();
-	void initChildLevels();
+
+	// Extensions
+    void toLossyDAG(bool internalCall = false);
+    void toLossyDAG2(float qualityPct);
+    unsigned int mergeAcrossAllLevels();
+    void symMergeAcrossAllLevels();
+
+    // External helpers
+    void initChildLevels();
     void hiddenGeometryFloodfill();
 
 	// External tools
@@ -140,6 +142,19 @@ private: // Internal tools
 	unsigned int cleanEmptyNodes();
 	void invertInvs(Node &n, int lev, bool inX, bool inY, bool inZ);
 
-    void symMergeAcrossAllLevels();
+    bool compareSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> &nodesInSubtree);
+    bool compareSymSubtrees(unsigned int levA, unsigned int levB, Node &nA, Node &nB, bool sX, bool sY, bool sZ);
+
+    unsigned int findAllSymDuplicateSubtrees();
+
+    void
+    diffSubtrees(unsigned int levA, unsigned int levB, const Node &nA, const Node &nB,
+                 const unsigned int abortThreshold,
+                 unsigned int &accumulator, std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> &nodesInSubtree);
+
+    uint64_t computeNodeHash(const Node &node, unsigned int depth);
+
+    void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, unsigned int levStart, unsigned int levEnd);
+    inline void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps) { this->buildMultiMap(depth, matchMaps, 0, _levels)};
 
 };

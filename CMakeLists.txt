@@ -128,7 +128,7 @@ ADD_LIBRARY( symvox
 	src/symvox/octree_node.cpp
 	src/symvox/util.hpp
 	shaders/octree_dda.frag.glsl
-)
+        src/symvox/geom_octree_extension.cpp)
 
 TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
 

@@ -98,7 +98,7 @@ int main(int argc, char ** argv) {
 		std::string arg = argv[i];
 		if (arg == "--lossy" || arg == "-l") 
 			lossy = true;
-		else if (arg == "-cross-level-merging" || arg == "-c")
+		else if (arg == "--cross-level-merging" || arg == "-c")
 			multiLevel = true;
         if (arg == "--hidden-geometry" || arg == "-h")
             exploitHiddenGeom = true;
