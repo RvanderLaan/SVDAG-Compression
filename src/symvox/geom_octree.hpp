@@ -131,6 +131,7 @@ public:
     // External helpers
     void initChildLevels();
     void hiddenGeometryFloodfill();
+    std::vector<std::vector<unsigned int>> sortByRefCount();
 
 	// External tools
 	bool checkIntegrity();
@@ -155,6 +156,6 @@ private: // Internal tools
     uint64_t computeNodeHash(const Node &node, unsigned int depth);
 
     void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, unsigned int levStart, unsigned int levEnd);
-    inline void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps) { this->buildMultiMap(depth, matchMaps, 0, _levels)};
+    inline void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps) { this->buildMultiMap(depth, matchMaps, 0, _levels); };
 
 };

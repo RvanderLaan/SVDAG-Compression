@@ -91,13 +91,23 @@ int main(int argc, char ** argv) {
 	}
 
     bool lossy = false;
+    bool lossy2 = false;
 	bool multiLevel = false;
 	bool exploitHiddenGeom = false;
+	float lossyTargetPct = 0.85;
 
 	for (int i = 4; i < argc; ++i) {
 		std::string arg = argv[i];
 		if (arg == "--lossy" || arg == "-l") 
 			lossy = true;
+		if (arg == "--lossy2" || arg == "-l2") {
+		    try {
+		        lossyTargetPct = std::stof(argv[i + 1]);
+		    } catch(std::invalid_argument&) {
+		        printf("Could not parse lossy target percentage, using default of %.2f%%\n", lossyTargetPct);
+		    }
+			lossy2 = true;
+		}
 		else if (arg == "--cross-level-merging" || arg == "-c")
 			multiLevel = true;
         if (arg == "--hidden-geometry" || arg == "-h")
@@ -155,9 +165,14 @@ int main(int argc, char ** argv) {
 
     octree.initChildLevels();
 
+    if (lossy2) {
+        octree.toLossyDAG2(lossyTargetPct); // Todo: add variable as arg
+    }
+
 	// Save single-level merged
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
+
 
 	if (multiLevel) {
 		// TODO: Clean this up later
@@ -176,7 +191,7 @@ int main(int argc, char ** argv) {
 		svdag2.save(basePath + "-multi.svdag");
 	}
 
-    if (!lossy && !multiLevel) {
+    if (!lossy && !multiLevel && !lossy2) {
         octree.toSDAG(false, false);
     }
 
