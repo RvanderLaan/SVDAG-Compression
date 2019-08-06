@@ -713,7 +713,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     size_t origNNodes = _nNodes;
     _nNodes = 1;
 
-    unsigned int nMatches = 0;
+    int nMatches = 0;
     unsigned targetMatches = origNNodes - origNNodes * qualityPct;
 
 //    unsigned int depthOffset = currentDiff / 8; // diff of greater than 8 requires more than 1 node
@@ -728,17 +728,22 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     // Store all nodes that are visited in a subtree, so they can be potentially removed if a correspondence is found
     std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> nodesInCurSubtree(_levels);
 
+    // Todo: Find a way to loop only once instead of for every losssy diff
+    // E.g., allow 1 or 2 more diff for each level above the leaves
+
+    // Continue lossy compression until the desired size percentage is reached
+    bool reachedTarget = false;
     // First merge nodes with diff of 1, then more and more
     for (unsigned int lossyDiff = 1; lossyDiff < 8; ++lossyDiff) { // Todo: How far are we going. Should maybe be relative to level?
-        // Continue lossy compression until the desired size percentage is reached
-        bool reachedTarget = false;
 
         unsigned int currentMatchDepth = _levels / 2;
         buildMultiMap(currentMatchDepth, matchMaps);
 
         printf("Diff: %u (matches so far: %u) ", lossyDiff, nMatches);
 
-        for (unsigned int levA = 1; levA < _levels - 1; ++levA) {
+        // The higher of a diff we allow, the earlier we should stop in the graph (stop the loop over levels earlier)
+        // A high difference in a low level is worse than a high difference in a higher level
+        for (unsigned int levA = 1; levA < _levels - 2 - (lossyDiff / 2); ++levA) {
             printf(" - L%u.. ", levA); fflush(stdout);
 
             // Build new match maps for the lowest levels with lower depths, when those nodes do not have subtrees of that depth
@@ -778,9 +783,11 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
                         // Todo: Also increment for nodes in cur subtree with 1 ref count
                         // Found a match
                         multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
-                        for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
-                            multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
-                        }
+//                        for (int levRem = 0; levRem < _levels; ++levRem) { // levels below the root
+//                            multiLevelCorrespondences[levRem].insert(nodesInCurSubtree[levRem].begin(), nodesInCurSubtree[levRem].end());
+//                        }
+
+                        refCounts[levA][idA] = 0;
                         break;
                     }
                 }
@@ -796,17 +803,27 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
         if (reachedTarget) break;
     }
 
-    // Subtract from refCounts the nodes that are in multiLevelReferences
-//    for (unsigned int lev = _levels - 1; lev > 1; --lev) {
-//        for (const auto &match : multiLevelCorrespondences[lev - 1]) {
-//            const Node &node = _data[lev][match.first];
-//            for (int c = 0; c < 8; ++c) {
-//                if (node.existsChild(c)) {
-//                    refCounts[lev + 1][node.children[c]]--;
-//                }
-//            }
-//        }
-//    }
+    if (!reachedTarget) {
+        printf("Did not reach lossy compression target, %u lossy matches found from total of %zu nodes", nMatches, origNNodes);
+    }
+
+    int nIndirectRemovedNodes = 0;
+    for (unsigned int lev = 1; lev < _levels; ++lev) {
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+            if (refCounts[lev][nodeIndex] == 0) {
+                nIndirectRemovedNodes++;
+                // Decrement ref counts for its children
+                for (int c = 0; c < 8; ++c) {
+                    const auto &n = _data[lev][nodeIndex];
+                    if (n.existsChildPointer(c)) {
+                        refCounts[lev + 1][n.children[c]] -= 1;
+                    }
+                }
+            }
+        }
+    }
+
+    printf("\n MATCHES: %u, INDIRECTLY REMOVED NODES: %u\n", nMatches, nIndirectRemovedNodes - nMatches);
 
     /*
      * Todo: Fix idea
@@ -831,26 +848,28 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
         std::vector<id_t> correspondences(_data[lev].size(), (id_t) -1); // normal correspondences for this level (old index -> new index) for those that are not removed
 
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+            if (refCounts[lev][nodeIndex] == 0) continue;
+
             // insert all nodes in uniqueNodes that do not have a correspondence in a higher level
             if (multiLevelCorrespondences[lev].count(nodeIndex) == 0) {
                 correspondences[nodeIndex] = uniqueNodes.size();
                 uniqueNodes.push_back(_data[lev][nodeIndex]);
-            } else if (lev > 0) {
-                // If this node has fewer lossy matches than it is referenced, then also add it as a unique node
-                // since it will still be referenced from a node that isn't removed
-                unsigned int matchCount = 0;
-                for (const auto &match : multiLevelCorrespondences[lev - 1])
-                    if (match.second.second == nodeIndex)
-                        matchCount++;
-                if (matchCount == refCounts[lev][nodeIndex]) {
-                    correspondences[nodeIndex] = uniqueNodes.size();
-                    uniqueNodes.push_back(_data[lev][nodeIndex]);
-                }
             }
+//            else if (lev > 0) {
+//                // If this node has fewer lossy matches than it is referenced, then also add it as a unique node
+//                // since it will still be referenced from a node that isn't removed
+//                unsigned int matchCount = 0;
+//                for (const auto &match : multiLevelCorrespondences[lev - 1])
+//                    if (match.second.second == nodeIndex)
+//                        matchCount++;
+//                if (matchCount == refCounts[lev][nodeIndex]) {
+//                    correspondences[nodeIndex] = uniqueNodes.size();
+//                    uniqueNodes.push_back(_data[lev][nodeIndex]);
+//                }
+//            }
         }
 
         printf("- L%u: %zu -> %zu\n", lev, _data[lev].size(), uniqueNodes.size());
-
 
         // Replace node data for this level
         _data[lev].clear();
@@ -865,6 +884,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
         // Update all pointers in the level above
         for (id_t nodeIndex = 0; nodeIndex < _data[lev-1].size(); ++nodeIndex) {
+            if (refCounts[lev - 1][nodeIndex] == 0) continue;
             Node *node = &_data[lev - 1][nodeIndex];
             // For all children...
             for (int j = 0; j < 8; j++) {
@@ -1521,7 +1541,7 @@ void GeomOctree::hiddenGeometryFloodfill() {
     auto getNeighbours = [&](const TravNode &tn, std::vector<TravNode> &neighbours) {
         // Get neighbours for all directions
         for (int dir = 0; dir <= PZ; ++dir) {
-            // Get the neighbour directly next to it
+            // Get the neighbour directly next to it in this direction
             const TravNode &nb = getNeighbourGrtrEqSz(tn, (DirectionIdx) dir);
             // find the leaf nodes on the side of the input node inside the neighbour
             getNeighboursSmSz(tn, nb, (DirectionIdx) dir, neighbours);
@@ -1553,17 +1573,10 @@ void GeomOctree::hiddenGeometryFloodfill() {
         }
     }
 
-    // Todo: Implementation needs some adjustments
-    // In the algorithm description, empty nodes are node instances as well, as nodes with 0 children
-    // In this project, empty nodes are only indicated to exist by its parent.
-    // So, neighbours need to be found from nodes that don't exist, but through their description: (parent + childIdx)
-    // -> TravNode can be used for this :D
-    // -> almost finished this, some bugs still need fixing
-
     // Check if the starting node intersects with geometry: Then the initial node is inside, so not a good starting point
-    if (getNode(*(startTrav.parent)).existsChild(startTrav.childIdx)) {
+    if (_data[startTrav.level - 1][startTrav.parentIdx].existsChild(startTrav.childIdx)) {
         printf("Deepest corner node intersects with geometry, not dealing with this now... Aborting flood fill\n");
-        return;
+        exit(1);
     }
 
     // Flood fill, using a queue of nodes that need to be visited
@@ -1571,6 +1584,8 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
     static std::stack<TravNode> queue;
     queue.push(startTrav);
+    _data[0][0].outsideMask = 0;
+    _data[startTrav.level - 1][startTrav.parentIdx].setChildOutsideBit(startTrav.childIdx);
 
     unsigned int numOutsideLeafs = 0;
 
@@ -1584,32 +1599,54 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
             const Node &nbP = getNode(*(nbTravNode.parent)); // neighbour parent
             // Node should be checked if 1. not intersects with geometry and 2. not already marked as outside
-            if (!nbP.existsChild(nbTravNode.childIdx) && !nbP.getChildOutsideBit(nbTravNode.childIdx)) {
-                // Add to queue to visit next
-                queue.push(nbTravNode);
-                // mark as being outside of any geometry in parent
-//                nbP.setChildOutsideBit(nbTravNode.childIdx);
+            if (!nbP.getChildOutsideBit(nbTravNode.childIdx)) {
+                // Any neighbour of an outside node is also outside, as nodes on a surface also count as outside
                 _data[nbTravNode.level - 1][nbTravNode.parentIdx].setChildOutsideBit(nbTravNode.childIdx);
-                numOutsideLeafs++;
+                if (!nbP.existsChild(nbTravNode.childIdx)) {
+                    // Add to queue to visit next
+                    queue.push(nbTravNode);
+                    // mark as being outside of any geometry in parent
+    //                nbP.setChildOutsideBit(nbTravNode.childIdx);
+                    numOutsideLeafs++;
+                }
             }
         }
     }
     // Todo: Also consider what to happens with multiple build steps!
 
+    printf("Propagating inside/outside node status up the graph...\n");
     // After all of the deepest nodes have been marked as inside/outside, propagate those values to their parents
     for (int lev = _levels - 2; lev >= 0; --lev) {
-        int insideNodes = 0;
+        int outsideNodes = 0;
         for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {
-            Node &parent = _data[lev][nodeId];
+            Node &n = _data[lev][nodeId];
             for (int c = 0; c < 8; ++c) {
-                if (parent.existsChildPointer(c) && _data[lev + 1][parent.children[c]].isInside()) {
-                    parent.setChildOutsideBit(c);
-                    insideNodes++;
+                if (n.existsChildPointer(c) && !_data[lev + 1][n.children[c]].isInside()) {
+                    _data[lev][nodeId].setChildOutsideBit(c);
+                    outsideNodes++;
                 }
             }
         }
-        printf("Level %i: %.2f%% of nodes inside\n", lev + 1, 100 * insideNodes / (float) _data[lev + 1].size());
+        printf("Level %i: %.2f%% of SVO nodes outside\n", lev + 1, 100.0 * outsideNodes / (float) _data[lev + 1].size());
     }
+
+
+    // Check to see if floodfill works: Set all inside nodes to bitmask with 1
+#if 1
+    printf("DEBUG: Setting inside nodes to first node of level...\n");
+    for (int lev = _levels - 1; lev >= 0; --lev) {
+        for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {
+            Node &parent = _data[lev][nodeId];
+            for (int c = 0; c < 8; ++c) {
+                if (!parent.existsChild(c) && !parent.getChildOutsideBit(c)) {
+                    parent.setChildBit(c);
+                    parent.children[c] = 0;
+                }
+            }
+        }
+    }
+
+#endif
 
 
     printf("Done with flood fill! %u leaves outside of geometry\n", numOutsideLeafs);
