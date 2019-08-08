@@ -662,14 +662,21 @@ void main() {
 			vec3 hitPos = r.o + result.x * r.d;
 
 			const float cellSize = result.y;
-//			const vec3 cellVec = normalize(sceneBBoxMax-sceneBBoxMin) * cellSize;
 
 			// (voxel) Surface normal:
 			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
 			vec3 voxCenter = localHitPos - mod(localHitPos + epsilon, cellSize) + cellSize / 2.0;
 			voxCenter += sceneCenter; // Local -> global position
-			vec3 hitNorm = (normalize(voxCenter - hitPos));
-			// Looks like hitNorm needs to be inverted, but not working for all sides of voxels yet...
+			vec3 hitNorm = normalize(voxCenter - hitPos);
+			
+			// The normal vector now points from the voxel center to the hit position like it's a sphere
+
+//			hitNorm = round(hitNorm); // rounding the normal gives a nice "tile" look
+
+			// This converts the spherical normal to a cube normal, setting only its maximum value to 1 (or min to -1)
+			vec3 absHN = abs(hitNorm);
+			float maxAbsHN = max(max(absHN.x, absHN.y), absHN.z);
+			hitNorm = -sign(hitNorm) * vec3(greaterThanEqual(absHN, vec3(maxAbsHN)));
 
 			
 			// Trace ray to light pos
@@ -695,6 +702,7 @@ void main() {
 //			==> Enable this for shadows (needs correct normal to work properly though)
 //			t = (shd_result.x > 0) ? baseCol / 2.0 : baseCol;
 
+			// Light falloff
 //			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
 		}
 	
