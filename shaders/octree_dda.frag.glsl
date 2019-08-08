@@ -646,7 +646,7 @@ void main() {
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
 	vec4 result = trace_ray(r, t_min_max, projectionFactor);
-	const float epsilon = 1E-6f;
+	const float epsilon = 1E-4f;
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -662,9 +662,12 @@ void main() {
 			vec3 hitPos = r.o + result.x * r.d;
 
 			const float cellSize = result.y;
+//			const vec3 cellVec = normalize(sceneBBoxMax-sceneBBoxMin) * cellSize;
 
 			// (voxel) Surface normal:
-			vec3 voxCenter = hitPos - mod(hitPos + epsilon, cellSize) + cellSize / 2.0;
+			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
+			vec3 voxCenter = localHitPos - mod(localHitPos + epsilon, cellSize) + cellSize / 2.0;
+			voxCenter += sceneCenter; // Local -> global position
 			vec3 hitNorm = (normalize(voxCenter - hitPos));
 			// Looks like hitNorm needs to be inverted, but not working for all sides of voxels yet...
 
