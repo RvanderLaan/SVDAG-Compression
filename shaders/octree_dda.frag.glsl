@@ -665,7 +665,7 @@ void main() {
 
 			// (voxel) Surface normal:
 			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
-			vec3 voxCenter = localHitPos - mod(localHitPos + epsilon, cellSize) + cellSize / 2.0;
+			vec3 voxCenter = localHitPos - mod(localHitPos + r.d * epsilon, cellSize) + cellSize / 2.0;
 			voxCenter += sceneCenter; // Local -> global position
 			vec3 hitNorm = normalize(voxCenter - hitPos);
 			
