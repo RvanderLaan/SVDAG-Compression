@@ -103,8 +103,11 @@ int main(int argc, char ** argv) {
 		if (arg == "--lossy2" || arg == "-l2") {
 		    try {
 		        lossyTargetPct = std::stof(argv[i + 1]);
+		        if (lossyTargetPct <= 0 || lossyTargetPct > 1) {
+		            printf("Lossy target percentage should be between 0 and 1\n"); exit(1);
+		        }
 		    } catch(std::invalid_argument&) {
-		        printf("Could not parse lossy target percentage, using default of %.2f%%\n", lossyTargetPct);
+		        printf("Could not parse lossy target percentage, using default of %.2f%%\n", 100.0 * lossyTargetPct);
 		    }
 			lossy2 = true;
 		}

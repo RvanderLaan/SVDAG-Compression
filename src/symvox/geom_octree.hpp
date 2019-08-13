@@ -150,8 +150,7 @@ private: // Internal tools
 
     void
     diffSubtrees(unsigned int levA, unsigned int levB, const Node &nA, const Node &nB,
-                 const unsigned int abortThreshold,
-                 unsigned int &accumulator, std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> &nodesInSubtree);
+                 const unsigned int abortThreshold, unsigned int &accumulator);
 
     uint64_t computeNodeHash(const Node &node, unsigned int depth);
 
