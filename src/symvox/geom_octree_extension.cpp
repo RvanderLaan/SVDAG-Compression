@@ -782,9 +782,9 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     }
 
     // Sort nodes based on #references: Highest reffed nodes at the start
-    std::vector<std::vector<unsigned int>> refCounts = this->sortByEffectiveRefCount();
+    std::vector<std::vector<unsigned int>> refCounts = this->sortByRefCount();
 
-#if 1
+#if 0
     printf("DEBUG: Check how often nodes are referenced\n");
 
     for (unsigned int lev = 1; lev < _levels; ++lev) {
@@ -837,7 +837,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
             unsigned int maxMatchDepth = std::max(_levels - levA - 2, 1u); // e.g. 10 levels, at levA 5, would give depth of 3:
             if (maxMatchDepth < currentMatchDepth) {
                 currentMatchDepth = maxMatchDepth;
-                buildMultiMap(currentMatchDepth, matchMaps, levA, levA + 1); // + 2 cuz last level has same depth, hacky solution
+                buildMultiMap(currentMatchDepth, matchMaps, 0, _levels); // + 2 cuz last level has same depth, hacky solution
             }
 
             // For every node in level A, starting with least referenced one
@@ -858,20 +858,23 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
                         uint64_t nAKeyMod = nAKey ^(1UL << i);
                         auto candidates = matchMaps[levB].equal_range(nAKeyMod);
                         for (auto it = candidates.first; it != candidates.second; ++it) {
+//                            printf("CANDIDATE ");
                             // Todo: If there is a candidate, it must have 1 diff, no need to check... right?
                             id_t idB = it->second;
-                            if (idA <= idB) continue;
-                            const Node &nB = _data[levB][idB];
-                            unsigned int diff = 0;
-                            this->diffSubtrees(levA, levB, nA, nB, lossyDiff + 1, diff);
-                            if (diff != 1) printf("DIFF NOT 1???\n");
-                            if (diff <= lossyDiff) {
+//                            if (idA <= idB) continue;
+                            if (refCounts[levB][idB] == 0) continue; // continue if this node was already merged
+//
+//                            const Node &nB = _data[levB][idB];
+//                            unsigned int diff = 0;
+//                            this->diffSubtrees(levA, levB, nA, nB, lossyDiff + 1, diff);
+//                            if (diff != 1) printf("DIFF NOT 1???\n");
+//                            if (diff <= lossyDiff) {
                                 // Found a match
                                 nMatches++;
                                 multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
                                 refCounts[levA][idA] = 0;
                                 break;
-                            }
+//                            }
                         }
                     }
                 } else {
@@ -934,7 +937,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     }
 
 
-#if 1
+#if 0
     printf("DEBUG: Check how often nodes are referenced\n");
 
     for (unsigned int lev = 1; lev < _levels; ++lev) {
@@ -1028,8 +1031,8 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
     _stats.nNodesDAG = _nNodes;
 
-    _state = S_SVO;
-    toDAG(false);
+//    _state = S_SVO;
+//    toDAG(false);
 
     /////////////////////////////////
     /// Done: Print the results!   //
@@ -1048,6 +1051,23 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
 }
 
+//void GeomOctree::toLossyDag3() {
+    //
+    // Before starting anew:
+    /*
+     * Why doesn't toLossyDag2 work?
+     * Problem: Missing correspondences
+     * - Hypothesis 1: Cascade of lossy errors
+     * - How to (dis)prove this: Only perform on a single level
+     * - Result: [experiment now]
+     *      - Merging on 1 level does not cause missing corresponences. However, it seems like the diff is larger than 1
+     * - How to resolve this: "Freeze" subtrees that are a match target.
+     *      - Risk: Not taking into account ref counts of nodes in the subtree, only the root
+     *
+     * - Hypothesis 2: Pointer update mistake
+     * -
+     */
+//}
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////// CROSS LEVEL MERGING /////////////////////////

@@ -632,6 +632,26 @@ float randomFloat( uint x ) { return floatConstruct(hash(x)); }
 //	return vec3(randomFloat(x), randomFloat(x / 2), randomFloat(x / 3));
 //}
 
+// From https://gist.github.com/mikhailov-work/0d177465a8151eb6ede1768d51d476c7
+vec3 TurboColormap(in float x) {
+	const vec4 kRedVec4 = vec4(-0.05195877, 5.18000081, -30.94853351, 81.96403246);
+	const vec4 kGreenVec4 = vec4(0.16207513, 0.17712472, 15.24091500, -36.50657960);
+	const vec4 kBlueVec4 = vec4(0.55305649, 3.00913185, -5.46192616, -11.11819092);
+	const vec2 kRedVec2 = vec2(-86.53476570, 30.23299484);
+	const vec2 kGreenVec2 = vec2(25.95549545, -5.02738237);
+	const vec2 kBlueVec2 = vec2(27.81927491, -14.87899417);
+
+//	x = saturate(x); // not available on nvidia
+	x = clamp(x, 0.0, 1.0);
+	vec4 v4 = vec4( 1.0, x, x * x, x * x * x);
+	vec2 v2 = v4.zw * v4.z;
+	return vec3(
+		dot(v4, kRedVec4)   + dot(v2, kRedVec2),
+		dot(v4, kGreenVec4) + dot(v2, kGreenVec2),
+		dot(v4, kBlueVec4)  + dot(v2, kBlueVec2)
+	);
+}
+
 void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
 	Ray r = computeCameraRay(screenCoords);
@@ -652,11 +672,12 @@ void main() {
 		if(viewerRenderMode == 0) // ITERATIONS
 			t =  1. - (result.z / float(maxIters));
 		else if(viewerRenderMode == 1) // DEPTH
-			t = result.x / length(sceneBBoxMax-sceneBBoxMin);
+			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
 		else if (viewerRenderMode == 2) // VOXEL LEVELS
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
 	
 		color = vec3(t, t, t);
+//		color = TurboColormap(t);
 
 		// Assign random colors based on the index of a node
 		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
