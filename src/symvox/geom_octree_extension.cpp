@@ -61,13 +61,13 @@ uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int 
     return key;
 };
 
-#define WRITE_KEYS_TO_FILE 0
+#define WRITE_KEYS_TO_FILE 1
 /** Builds a multi-map of NodeHash -> Nodes with same hash */
 void GeomOctree::buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, unsigned int levStart, unsigned int levEnd) {
-    printf("[Building match maps @ depth %u... ", depth);
-//    fflush(stdout);
+    printf("[Match maps @D%u...", depth); fflush(stdout);
+
 #if WRITE_KEYS_TO_FILE
-    std::ofstream myfile("../keys/keys-" + std::to_string(depth) + ".txt", std::ios::out | std::ios::trunc);
+    std::ofstream myfile("keys-" + std::to_string(depth) + ".txt", std::ios::out | std::ios::trunc);
 #endif
     for (unsigned int lev = levStart; lev < levEnd - depth; ++lev) {
         matchMaps[lev].clear();
@@ -82,7 +82,7 @@ void GeomOctree::buildMultiMap(unsigned int depth, std::vector<std::multimap<uin
 #if WRITE_KEYS_TO_FILE
     myfile.close();
 #endif
-    printf("Done!]" );
+    printf("]"); fflush(stdout);
 };
 
 
@@ -298,6 +298,82 @@ std::vector<std::vector<unsigned int>> GeomOctree::sortByRefCount() {
         std::vector<GeomOctree::Node> sortedNodes(_data[lev].size());
 
         refCounts[lev].reserve(_data[lev].size());
+
+        for (id_t i = 0; i < hist.size(); ++i) {
+
+            if (lev != _levels - 1) {
+                GeomOctree::Node &n = _data[lev][hist[i].first];
+                for (int c = 7; c >= 0; --c) {
+                    if (n.existsChild(c)) {
+                        n.children[c] = indirection[n.children[c]];
+                    }
+                }
+            }
+
+            newIndirection[hist[i].first] = i;
+            sortedNodes[i] = _data[lev][hist[i].first];
+            refCounts[lev][i] = hist[i].second;
+        }
+
+        indirection = newIndirection;
+
+        _data[lev].clear();
+        _data[lev].shrink_to_fit();
+        _data[lev] = sortedNodes;
+    }
+    printf(" Done!\n");
+    return refCounts;
+}
+
+
+/** Sorts nodes so that the node with the most refences is at index 0. Also updates pointers accordingly */
+std::vector<std::vector<unsigned int>> GeomOctree::sortByEffectiveRefCount() {
+    printf("Sorting nodes based on effective ref count: Level "); fflush(stdout);
+    std::vector<std::vector<unsigned int>> refCounts(_levels);
+    refCounts[0].emplace_back(1);
+
+    // Pre-count effective ref counts
+    for (int lev = 1; lev < _levels; ++lev) {
+        refCounts[lev].assign(_data[lev].size(), 0);
+
+        // count num of references in the superior level
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev-1].size(); ++nodeIndex) {
+            const Node &n = _data[lev - 1][nodeIndex];
+            // Add the ref counts from the parent to each child. -> If same child is referenced multiple times, add multiple times
+            for (int c = 0; c < 8; ++c)
+                if (n.existsChildPointer(c)) refCounts[lev][n.children[c]] += refCounts[lev - 1][nodeIndex];
+        }
+    }
+
+    /** Stolen from encoded_ssvdag.cpp */
+    // histogram vector with pairs of idx, number of pointers to the nodes
+    std::vector<std::pair<id_t, unsigned int>> hist;
+
+    // indirection vector to map between one level indices (position in the vector) and their children offsets
+    std::vector<GeomOctree::id_t> indirection;
+
+    // Sort
+    for (int lev = _levels - 1; lev >= 0; --lev) {
+        printf(" %u..", lev); fflush(stdout);
+
+        hist.resize(_data[lev].size());
+        hist.shrink_to_fit();
+
+        // refs initialization to ordered indices and zeros
+        for (GeomOctree::id_t i = 0; i < _data[lev].size(); ++i) {
+            hist[i].first = i; // idx
+            hist[i].second = refCounts[lev][i]; // num of refs
+        }
+
+        if (lev > 0) { // Don't do it for the root node
+            // sort by number of references (c++11's lambdas r00lez) ;D
+            std::sort(hist.begin(), hist.end(),
+                      [](std::pair< GeomOctree::id_t, GeomOctree::id_t > a, std::pair< GeomOctree::id_t, GeomOctree::id_t> b) { return a.second > b.second; }
+            );
+        }
+
+        std::vector<id_t> newIndirection(_data[lev].size());
+        std::vector<GeomOctree::Node> sortedNodes(_data[lev].size());
 
         for (id_t i = 0; i < hist.size(); ++i) {
 
@@ -706,9 +782,9 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     }
 
     // Sort nodes based on #references: Highest reffed nodes at the start
-    std::vector<std::vector<unsigned int>> refCounts = this->sortByRefCount();
+    std::vector<std::vector<unsigned int>> refCounts = this->sortByEffectiveRefCount();
 
-#if 0
+#if 1
     printf("DEBUG: Check how often nodes are referenced\n");
 
     for (unsigned int lev = 1; lev < _levels; ++lev) {
@@ -738,13 +814,13 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     // Contains for each level, a map of node IDs that point to level and index of an identical subtree higher-up in the graph.
     std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> multiLevelCorrespondences(_levels); // store correspondences across different levels
 
-    // Todo: Find a way to loop only once instead of for every losssy diff
+    // Todo: Find a way to loop only once instead of for every lossy diff
     // E.g., allow 1 or 2 more diff for each level above the leaves
 
     // Continue lossy compression until the desired size percentage is reached
     bool reachedTarget = false;
     // First merge nodes with diff of 1, then more and more
-    for (unsigned int lossyDiff = 1; lossyDiff < 8; ++lossyDiff) { // Todo: How far are we going. Should maybe be relative to level?
+    for (unsigned int lossyDiff = 1; lossyDiff < 2; ++lossyDiff) { // Todo: How far are we going. Should maybe be relative to level?
 
         unsigned int currentMatchDepth = _levels / 2;
         buildMultiMap(currentMatchDepth, matchMaps);
@@ -754,47 +830,73 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
         // The higher of a diff we allow, the earlier we should stop in the graph (stop the loop over levels earlier)
         // A high difference in a low level is worse than a high difference in a higher level
         // Todo: At which level do we start? Lev 1 makes logical sense, levs/2 makes practical sense
-        for (unsigned int levA = _levels / 2; levA < _levels - 1; ++levA) {
+        for (unsigned int levA = _levels  - 2; levA < _levels - 1; ++levA) {
             printf(" - L%u.. ", levA); fflush(stdout);
 
             // Build new match maps for the lowest levels with lower depths, when those nodes do not have subtrees of that depth
-            unsigned int maxMatchDepth = _levels - levA - 2; // e.g. 10 levels, at levA 5, would give depth of 3:
+            unsigned int maxMatchDepth = std::max(_levels - levA - 2, 1u); // e.g. 10 levels, at levA 5, would give depth of 3:
             if (maxMatchDepth < currentMatchDepth) {
                 currentMatchDepth = maxMatchDepth;
-                buildMultiMap(currentMatchDepth, matchMaps);
+                buildMultiMap(currentMatchDepth, matchMaps, levA, levA + 1); // + 2 cuz last level has same depth, hacky solution
             }
 
             // For every node in level A, starting with least referenced one
             for (id_t idA = _data[levA].size() - 1; idA > 0; --idA) {
                 if (refCounts[levA][idA] == 0) continue; // continue if this node was already merged
-                if (refCounts[levA][idA] > 1) break; // stop if nodes are referenced more than once
+                if (refCounts[levA][idA] > 1) break; // stop once nodes are referenced more than once
 
                 Node &nA = _data[levA][idA];
                 uint64_t nAKey = computeNodeHash(nA, currentMatchDepth);
 
                 // Find potential matches in the next level. No cross-level-merging for now
                 unsigned int levB = levA; // Todo: Also try cross-level-merging, over all previous levels instead of same one
-                auto candidates = matchMaps[levB].equal_range(nAKey);
 
-                // Loop over candidates starting with most referenced one
-                // Quick test shows that the result is in the same order they are inserted as, so should be most referenced first
-                for (auto it = candidates.first; it != candidates.second; ++it) {
-                    id_t idB = it->second;
-                    if (idA <= idB) continue;
+                // Todo: For level above leaves, compute hash that includes all leaves (bitmasks appended into 64 bits)
+                // Then look up candidates for all 64 instances where 1 of the bits is inverted
+                if (levA == _levels - 2) {
+                    for (int i = 0; i < 64; ++i) {
+                        uint64_t nAKeyMod = nAKey ^(1UL << i);
+                        auto candidates = matchMaps[levB].equal_range(nAKeyMod);
+                        for (auto it = candidates.first; it != candidates.second; ++it) {
+                            // Todo: If there is a candidate, it must have 1 diff, no need to check... right?
+                            id_t idB = it->second;
+                            if (idA <= idB) continue;
+                            const Node &nB = _data[levB][idB];
+                            unsigned int diff = 0;
+                            this->diffSubtrees(levA, levB, nA, nB, lossyDiff + 1, diff);
+                            if (diff != 1) printf("DIFF NOT 1???\n");
+                            if (diff <= lossyDiff) {
+                                // Found a match
+                                nMatches++;
+                                multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
+                                refCounts[levA][idA] = 0;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    auto candidates = matchMaps[levB].equal_range(nAKey);
 
-                    // Todo: Why are there so many hash collisions at the level above the leaves?
-                    // Todo: Why are there holes/weird extensions in the output?
+                    // Loop over candidates starting with most referenced one
+                    // Quick test shows that the result is in the same order they are inserted as, so should be most referenced first
+                    for (auto it = candidates.first; it != candidates.second; ++it) {
+                        id_t idB = it->second;
+                        if (idA <= idB) continue;
 
-                    const Node &nB = _data[levB][idB];
+                        // Todo: Why are there so many hash collisions at the level above the leaves?
+                        // Todo: Why are there holes/weird extensions in the output?
 
-                    unsigned int diff = 0;
-                    this->diffSubtrees(levA, levB, nA, nB, lossyDiff + 1, diff);
-                    if (diff <= lossyDiff) {
-                        // Found a match
-                        nMatches++;
-                        multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
-                        refCounts[levA][idA] = 0;
-                        break;
+                        const Node &nB = _data[levB][idB];
+
+                        unsigned int diff = 0;
+                        this->diffSubtrees(levA, levB, nA, nB, lossyDiff + 1, diff);
+                        if (diff <= lossyDiff) {
+                            // Found a match
+                            nMatches++;
+                            multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
+                            refCounts[levA][idA] = 0;
+                            break;
+                        }
                     }
                 }
                 // Check if target is reached
@@ -926,6 +1028,8 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
     _stats.nNodesDAG = _nNodes;
 
+    _state = S_SVO;
+    toDAG(false);
 
     /////////////////////////////////
     /// Done: Print the results!   //
