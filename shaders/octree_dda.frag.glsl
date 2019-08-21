@@ -61,6 +61,7 @@ uniform isamplerBuffer childIndir;
 uniform int viewerRenderMode;
 uniform uint selectedVoxelIndex;
 uniform bool randomColors;
+uniform vec3 lightPos;
 #elif SHADOW_MODE
 uniform sampler2D hitPosTex;
 uniform sampler2D hitNormTex;
@@ -665,6 +666,7 @@ void main() {
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
 	vec4 result = trace_ray(r, t_min_max, projectionFactor);
+	const float epsilon = 1E-4f;
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -675,6 +677,52 @@ void main() {
 			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
 		else if (viewerRenderMode == 2) // VOXEL LEVELS
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
+		else if (viewerRenderMode == 3) { // PRETTY
+
+			// ====Base color, based on depth====
+			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
+
+			// Hit position = camera origin + depth * camera direction
+			vec3 hitPos = r.o + result.x * r.d;
+			const float cellSize = result.y;
+
+			// ====Voxel normal direction====
+			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
+			vec3 voxCenter = localHitPos - mod(localHitPos + r.d * epsilon, cellSize) + cellSize / 2.0;
+			voxCenter += sceneCenter; // Local -> global position
+			vec3 hitNorm = normalize(voxCenter - hitPos);
+			
+			// The normal vector now points from the voxel center to the hit position like it's a sphere
+//			hitNorm = round(hitNorm); // rounding the normal gives a nice "tile" look
+
+			// This converts the spherical normal to a cube normal, setting only its maximum value to 1 (or min to -1)
+			vec3 absHN = abs(hitNorm);
+			float maxAbsHN = max(max(absHN.x, absHN.y), absHN.z);
+			hitNorm = -sign(hitNorm) * vec3(greaterThanEqual(absHN, vec3(maxAbsHN)));
+			
+			// ====Diffuse shading====
+			vec3 lightDir = normalize(lightPos - hitPos);
+			t *= max(dot(hitNorm, normalize(lightPos - hitPos)), 0.5);
+			
+			// ====Shadow====
+			// Trace ray to light pos
+			const vec3 p = hitPos + hitNorm * cellSize * 0.5;
+			r.o = lightPos;
+			const vec3 lightToP = p - lightPos;
+			const float lightToPLength = length(lightToP);
+			r.d = normalize(lightToP);
+			vec2 t_min_max = vec2(0, lightToPLength);
+			vec4 shd_result = trace_ray(r, t_min_max, projectionFactor);
+
+
+			// Light fall-off
+//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+
+			// Add shadows
+//			t = (shd_result.x > 0) ? t / 2.0 : t;
+//			t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
+		}
 	
 		color = vec3(t, t, t);
 //		color = TurboColormap(t);
