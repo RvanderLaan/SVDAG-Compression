@@ -666,7 +666,7 @@ void main() {
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
 	vec4 result = trace_ray(r, t_min_max, projectionFactor);
-	const float epsilon = 1E-4f;
+	const float epsilon = 1E-6f;// * result.y;
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -674,7 +674,7 @@ void main() {
 		if(viewerRenderMode == 0) // ITERATIONS
 			t =  1. - (result.z / float(maxIters));
 		else if(viewerRenderMode == 1) // DEPTH
-			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
+			t = result.x / length(sceneBBoxMax-sceneBBoxMin);
 		else if (viewerRenderMode == 2) // VOXEL LEVELS
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
 		else if (viewerRenderMode == 3) { // PRETTY
@@ -682,15 +682,16 @@ void main() {
 			// ====Base color, based on depth====
 			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
 
-			// Hit position = camera origin + depth * camera direction
+			// Hit position = camera origin + depth * ray direction
 			vec3 hitPos = r.o + result.x * r.d;
 			const float cellSize = result.y;
 
 			// ====Voxel normal direction====
 			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
+			// Problem: adding r.d * eps causes the ray to cross the boundary to another voxel on around the edges
 			vec3 voxCenter = localHitPos - mod(localHitPos + r.d * epsilon, cellSize) + cellSize / 2.0;
 			voxCenter += sceneCenter; // Local -> global position
-			vec3 hitNorm = normalize(voxCenter - hitPos);
+			vec3 hitNorm = normalize(voxCenter - hitPos + r.d * epsilon);
 			
 			// The normal vector now points from the voxel center to the hit position like it's a sphere
 //			hitNorm = round(hitNorm); // rounding the normal gives a nice "tile" look
@@ -699,6 +700,9 @@ void main() {
 			vec3 absHN = abs(hitNorm);
 			float maxAbsHN = max(max(absHN.x, absHN.y), absHN.z);
 			hitNorm = -sign(hitNorm) * vec3(greaterThanEqual(absHN, vec3(maxAbsHN)));
+
+			// This normal computation has some artifacts due to floating point precision
+			// Todo: proper normal derivation can be done by looking at the direction of the previous voxel during traversal
 			
 			// ====Diffuse shading====
 			vec3 lightDir = normalize(lightPos - hitPos);
@@ -706,13 +710,13 @@ void main() {
 			
 			// ====Shadow====
 			// Trace ray to light pos
-			const vec3 p = hitPos + hitNorm * cellSize * 0.5;
-			r.o = lightPos;
-			const vec3 lightToP = p - lightPos;
-			const float lightToPLength = length(lightToP);
-			r.d = normalize(lightToP);
-			vec2 t_min_max = vec2(0, lightToPLength);
-			vec4 shd_result = trace_ray(r, t_min_max, projectionFactor);
+//			const vec3 p = hitPos + hitNorm * cellSize * 0.5;
+//			r.o = lightPos;
+//			const vec3 lightToP = p - lightPos;
+//			const float lightToPLength = length(lightToP);
+//			r.d = normalize(lightToP);
+//			vec2 t_min_max = vec2(0, lightToPLength);
+//			vec4 shd_result = trace_ray(r, t_min_max, projectionFactor);
 
 
 			// Light fall-off

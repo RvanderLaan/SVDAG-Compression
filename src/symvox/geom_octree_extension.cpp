@@ -1056,7 +1056,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     // Before starting anew:
     /*
      * Why doesn't toLossyDag2 work?
-     * Problem: Missing correspondences
+     * Problem: Too many detail is lost, even though diff is 1: E.g. large holes appear
      * - Hypothesis 1: Cascade of lossy errors
      * - How to (dis)prove this: Only perform on a single level
      * - Result: [experiment now]

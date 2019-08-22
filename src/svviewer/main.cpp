@@ -44,7 +44,8 @@ bool finish = false;
 bool printCamera = false;
 float frameTime = 0;
 std::string filename = "";
-static char filenameInput[128];
+static char filenameInput[128] = "";
+static char filenameInput2[128] = "";
 
 OctreeDDARenderer * renderer;
 EncodedOctree* encoded_octree;
@@ -179,6 +180,10 @@ bool loadFile(std::string inputFile) {
 	filename = sl::pathname_base(inputFile);
 	std::string ext = sl::pathname_extension(inputFile);
 	bool incorrectFile = false;
+
+	if (encoded_octree != nullptr)
+        delete encoded_octree;
+
 	if (ext == "svdag" || ext == "SVDAG") {
 		encoded_octree = new EncodedSVDAG();
 		if (!encoded_octree->load(inputFile)) incorrectFile = true;
@@ -217,57 +222,70 @@ void handleImgui() {
 	const static char* renderModes[] = { "ITERATIONS", "DEPTH", "LEVELS", "PRETTY" };
 	int renderModeInput = renderer->getViewerRenderMode();
 
-	ImGui::Begin("SymVox - Fork by RvanderLaan");
+	if (ImGui::Begin("SymVox - Fork by RvanderLaan")) {
 
-	ImGui::Text("File: \"%s\" - %s", filename.c_str(), encoded_octree->getDescription().c_str());
+        ImGui::Text("File: \"%s\" - %s", filename.c_str(), encoded_octree->getDescription().c_str());
 
-	ImGui::InputText("", filenameInput, IM_ARRAYSIZE(filenameInput));
-	ImGui::SameLine();
-	if (ImGui::Button("Open new file")) {
+        bool doLoadFile1 = ImGui::InputText("##file-slot-1", filenameInput, IM_ARRAYSIZE(filenameInput),
+                                            ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        doLoadFile1 = doLoadFile1 || ImGui::Button("Load file slot 1");
+        if (doLoadFile1) {
+            // Todo: Delete previous encoded_octree?
+            bool error = loadFile(filenameInput);
+            if (!error) {
+                renderer->setEncodedOctree(encoded_octree);
+                renderer->uploadData();
+            }
+        }
+        bool doLoadFile2 = ImGui::InputText("##file-slot-2", filenameInput2, IM_ARRAYSIZE(filenameInput2),
+                                            ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        doLoadFile2 = doLoadFile2 || ImGui::Button("Load file slot 2");
+        if (doLoadFile2) {
+            bool error = loadFile(filenameInput2);
+            if (!error) {
+                renderer->setEncodedOctree(encoded_octree);
+                renderer->uploadData();
+            }
+        }
 
-		bool error = loadFile(filenameInput);
-		// Todo: Delete previous encoded_octree?
-		if (!error) {
-			renderer->setEncodedOctree(encoded_octree);
-			renderer->uploadData();
-		}
-	}
+        if (ImGui::SliderInt("Draw level", &drawLevelInput, 1, encoded_octree->getNLevels()))
+            renderer->setDrawLevel(drawLevelInput);
+        if (ImGui::SliderInt("Max trav iters", &maxItersInput, 1, 500))
+            renderer->setGPUTraversalMaxIters(maxItersInput);
+        if (ImGui::Checkbox("Beam optimization", &beamOptInput))
+            renderer->toggleUseMinDepthOptimization();
+        if (ImGui::Checkbox("Random colors", &randomColsInput))
+            renderer->toggleRandomColors();
+        if (ImGui::SliderFloat("Pixel tolerance", &pixTolInput, 0.0f, 4.0f))
+            renderer->setPixelTolerance(pixTolInput);
+        //if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
+        //	renderer->setFovH(fovInput);
 
-	if (ImGui::SliderInt("Draw level", &drawLevelInput, 1, encoded_octree->getNLevels()))
-		renderer->setDrawLevel(drawLevelInput);
-	if (ImGui::SliderInt("Max trav iters", &maxItersInput, 1, 500))
-		renderer->setGPUTraversalMaxIters(maxItersInput);
-	if (ImGui::Checkbox("Beam optimization", &beamOptInput))
-		renderer->toggleUseMinDepthOptimization();
-	if (ImGui::Checkbox("Random colors", &randomColsInput))
-		renderer->toggleRandomColors();
-	if (ImGui::SliderFloat("Pixel tolerance", &pixTolInput, 0.0f, 4.0f))
-		renderer->setPixelTolerance(pixTolInput);
-	//if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
-	//	renderer->setFovH(fovInput);
+        if (ImGui::SliderFloat("Move speed", &walkFactorInput, 0.0f, 4.0f))
+            renderer->getCamera()->setWalkFactor(walkFactorInput);
 
-	if (ImGui::SliderFloat("Move speed", &walkFactorInput, 0.0f, 4.0f))
-		renderer->getCamera()->setWalkFactor(walkFactorInput);
-
-	if (ImGui::InputFloat3("Camera position", camPosInput, 2)) {
-		renderer->getCamera()->getCurrentConfig().pos[0] = camPosInput[0];
-		renderer->getCamera()->getCurrentConfig().pos[1] = camPosInput[1];
-		renderer->getCamera()->getCurrentConfig().pos[2] = camPosInput[2];
-	}
+        if (ImGui::InputFloat3("Camera position", camPosInput, 2)) {
+            renderer->getCamera()->getCurrentConfig().pos[0] = camPosInput[0];
+            renderer->getCamera()->getCurrentConfig().pos[1] = camPosInput[1];
+            renderer->getCamera()->getCurrentConfig().pos[2] = camPosInput[2];
+        }
 
 
-	if (ImGui::Combo("Render mode", &renderModeInput, renderModes, IM_ARRAYSIZE(renderModes))) {
-		renderer->setViewerRenderMode(renderModeInput);
-	}
+        if (ImGui::Combo("Render mode", &renderModeInput, renderModes, IM_ARRAYSIZE(renderModes))) {
+            renderer->setViewerRenderMode(renderModeInput);
+        }
 
-	if (ImGui::Button("Set light pos at camera")) {
-		renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
-	}
+        if (ImGui::Button("Set light pos at camera")) {
+            renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
+        }
 
-	// todo: show count, # references (per level), etc. + delete button
-	ImGui::Text("Selected voxel index (Hover + Enter): %i", renderer->getSelectedVoxelIndex());
-	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-
+        // todo: show count, # references (per level), etc. + delete button
+        ImGui::Text("Selected voxel index (Hover + Enter): %i", renderer->getSelectedVoxelIndex());
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
+                    ImGui::GetIO().Framerate);
+    }
 	ImGui::End();
 }
 
@@ -289,7 +307,10 @@ int main(int argc, char ** argv)
 	}
 
 	std::string inputFile(argv[1]);
-	strcpy(filenameInput, inputFile.c_str());
+
+	// Initialize imgui text inputs
+    strcpy(filenameInput, inputFile.c_str());
+    strcpy(filenameInput2, inputFile.c_str());
 
 	std::string ext = sl::pathname_extension(inputFile);
 	bool incorrectFile = loadFile(inputFile);

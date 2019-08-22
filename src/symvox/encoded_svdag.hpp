@@ -35,6 +35,7 @@ class EncodedSVDAG : public EncodedOctree {
 
 public:
 	EncodedSVDAG();
+	~EncodedSVDAG();
 
 	virtual bool load(const std::string filename);
 	virtual bool save(const std::string filename) const;

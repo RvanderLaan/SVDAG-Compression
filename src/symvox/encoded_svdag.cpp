@@ -34,6 +34,11 @@ EncodedSVDAG::EncodedSVDAG() : EncodedOctree() {
 	_data.clear();
 }
 
+EncodedSVDAG::~EncodedSVDAG() {
+    _data.clear();
+    _data.shrink_to_fit();
+}
+
 bool EncodedSVDAG::load(const std::string filename)
 {
 	printf("* Loading SVDAG '%s'... ", filename.c_str()); fflush(stdout);

@@ -33,6 +33,15 @@ EncodedSSVDAG::EncodedSSVDAG() {
 	check_decode_enabled_ = true;
 }
 
+EncodedSSVDAG::~EncodedSSVDAG() {
+    _dataLeaves.clear();
+    _dataLeaves.shrink_to_fit();
+    _dataInner.clear();
+    _dataInner.shrink_to_fit();
+    _levelOffsets.clear();
+    _levelOffsets.shrink_to_fit();
+}
+
 bool EncodedSSVDAG::load(const std::string filename)
 {
 	printf("* Loading SSVDAG '%s'... ", filename.c_str()); fflush(stdout);
