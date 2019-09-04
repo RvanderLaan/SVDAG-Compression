@@ -218,7 +218,7 @@ int EncodedSVDAG::getNodeIndex(sl::point3f p, int level) const
 
 		curNode = getChild(curNode, selectedChild, mX, mY, mZ);
 
-		if (isLeaf(curNode)) {
+		if (i == level - 2) {
 			return curNode.idx;
 		}
 	}

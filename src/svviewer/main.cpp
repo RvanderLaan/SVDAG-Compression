@@ -111,10 +111,11 @@ int getVoxelIndexAtCursor() {
 	printf("mouse ray dir: %f, %f, %f \n", rayDir[0], rayDir[1], rayDir[2]);
 
 	sl::point3f delPos = cam->getCurrentConfig().pos;
-	for (int i = 0; i < 100; i++) {
+	for (int i = 0; i < 1024; i++) {
 		// Traverse ray along small increments.
 		// Todo: use stack + dda
-		delPos += rayDir * 0.05f;
+		float stepSize = encoded_octree->getHalfSide(renderer->getDrawLevel());
+		delPos += rayDir * stepSize;
 
 		int nodeIndex = encoded_octree->getNodeIndex(delPos, renderer->getDrawLevel());
 		if (nodeIndex == -1) {

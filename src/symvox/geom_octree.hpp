@@ -121,10 +121,12 @@ public:
     void toDAG(bool internalCall = false);
     void toSDAG(bool internalCall = false, bool skipSymmetry = false);
 	void toSDAGCanonical();
+    void toHiddenGeometryDAG();
 
 	// Extensions
     void toLossyDAG(bool internalCall = false);
     void toLossyDAG2(float qualityPct);
+    void toLossyDag3();
     unsigned int mergeAcrossAllLevels();
     void symMergeAcrossAllLevels();
 
@@ -157,4 +159,14 @@ private: // Internal tools
 
     void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, unsigned int levStart, unsigned int levEnd);
     inline void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps) { this->buildMultiMap(depth, matchMaps, 0, _levels); };
+
+    uint64_t
+    computeNodeHashBotUp(const Node &node, const unsigned int lev, const std::vector<std::vector<uint64_t>> &hashes,
+                         uint8_t childMaskMask);
+
+    void
+    buildMultiMapBotUp(std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
+                       std::vector<std::vector<uint64_t>> &hashes,
+                       uint8_t childMaskMask);
+
 };

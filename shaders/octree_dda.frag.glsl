@@ -740,6 +740,8 @@ void main() {
 				((3 * nodeIndex) % 200) / 200.f,
 				((2 * nodeIndex) % 300) / 300.f
 			));
+			// Todo: Visualize ref count by dividing (sorted) index by num of nodes in level
+//			vec3 randomColor = vec3(1.0f - result.w / (1.0f * textureSize(nodes)));
 			color *= randomColor;
 		} else if (result.w == selectedVoxelIndex) {
 			// Highlight selected voxel index with blue

@@ -131,19 +131,20 @@ int main(int argc, char ** argv) {
 	if (levelStep == 0) {
         if (!isLas) {
             octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
-            if (exploitHiddenGeom) octree.hiddenGeometryFloodfill();
         } else {
             octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
         }
         svo.encode(octree);
         if (lossy) {
             octree.toLossyDAG();
+        } else if (exploitHiddenGeom) {
+            octree.hiddenGeometryFloodfill();
+            octree.toHiddenGeometryDAG();
         } else {
             octree.toDAG();
         }
 	}
 	else {
-		// Todo: Apply lossy for multiple build steps as well
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
 	}
 
@@ -169,7 +170,8 @@ int main(int argc, char ** argv) {
     octree.initChildLevels();
 
     if (lossy2) {
-        octree.toLossyDAG2(lossyTargetPct); // Todo: add variable as arg
+//        octree.toLossyDAG2(lossyTargetPct);
+        octree.toLossyDag3();
     }
 
 	// Save single-level merged
@@ -194,7 +196,7 @@ int main(int argc, char ** argv) {
 		svdag2.save(basePath + "-multi.svdag");
 	}
 
-    if (!lossy && !multiLevel && !lossy2) {
+    if (!lossy && !multiLevel && !lossy2 && !exploitHiddenGeom) {
         octree.toSDAG(false, false);
     }
 

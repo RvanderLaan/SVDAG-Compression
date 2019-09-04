@@ -61,7 +61,34 @@ uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int 
     return key;
 };
 
-#define WRITE_KEYS_TO_FILE 1
+uint64_t GeomOctree::computeNodeHashBotUp(const GeomOctree::Node &node, const unsigned int lev,
+        const std::vector<std::vector<uint64_t>> &hashes, uint8_t childMaskMask) {
+    uint64_t key = 0;
+    if (lev == _levels - 1) {
+        key += node.childrenBitmask & childMaskMask;
+        return key;
+    } else if (lev == _levels - 2) {
+        for (unsigned int c = 0; c < 8; ++c) {
+            // shift the bit mask of children into the key
+            key = key << 8u;
+            if (node.existsChildPointer(c) && (childMaskMask & (1U << c)) != 0) {
+                key += _data[lev + 1][node.children[c]].childrenBitmask;
+            }
+        }
+    } else {
+        for (unsigned int c = 0; c < 8; ++c) {
+            if (node.existsChildPointer(c) && (childMaskMask & (1U << c)) != 0) {
+                uint64_t childKey = hashes[lev + 1][node.children[c]];
+
+                key = key << 1u; // bit shift so that identical child hashes don't cancel each other out
+                key = hash64(key) ^ hash64(childKey); // xor of hash of current key and child key
+            }
+        }
+    }
+    return key;
+};
+
+#define WRITE_KEYS_TO_FILE 0
 /** Builds a multi-map of NodeHash -> Nodes with same hash */
 void GeomOctree::buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, unsigned int levStart, unsigned int levEnd) {
     printf("[Match maps @D%u...", depth); fflush(stdout);
@@ -75,7 +102,7 @@ void GeomOctree::buildMultiMap(unsigned int depth, std::vector<std::multimap<uin
             uint64_t key = computeNodeHash(_data[lev][nodeIndex], depth);
             matchMaps[lev].insert(std::make_pair(key, nodeIndex));
 #if WRITE_KEYS_TO_FILE
-                myfile << std::to_string(lev) + ", " + std::to_string(_data[lev][nodeIndex].childrenBitmask) + " ->\t " + std::to_string(key) + "\n";
+                myfile << std::to_string(lev) + ", " + std::to_string(_data[lev][nodeIndex].childrenBitmask) + " ->\t " + std::to_string(key) + "\n";stdout
 #endif
         }
     }
@@ -84,6 +111,27 @@ void GeomOctree::buildMultiMap(unsigned int depth, std::vector<std::multimap<uin
 #endif
     printf("]"); fflush(stdout);
 };
+
+/** Bottom-up version: Will compute hashes for all nodes in a bottom-up fashion, which should be faster, instead of specific levels as in the previous func */
+void GeomOctree::buildMultiMapBotUp(std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
+        std::vector<std::vector<uint64_t>> &hashes, uint8_t childMaskMask) {
+//    printf("[Match maps (BU)..."); fflush(stdout);
+    for (int lev = _levels - 1; lev >= 0; --lev) {
+        matchMaps[lev].clear();
+        hashes.clear();
+        hashes[lev].reserve(_data[lev].size());
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+            // Only store hash if the childMaskMask completely overlaps with the inside part of the outsideMask
+            const auto& node = _data[lev][nodeIndex];
+            if ((node.outsideMask & childMaskMask) != 0) continue;
+
+            int64_t hash = computeNodeHashBotUp(_data[lev][nodeIndex], lev, hashes, childMaskMask);
+            matchMaps[lev].insert(std::make_pair(hash, nodeIndex));
+            hashes[lev].push_back(hash);
+        }
+    }
+//    printf("]"); fflush(stdout);
+}
 
 
 /** Deep recursive subtree comparison **/
@@ -171,7 +219,7 @@ void GeomOctree::diffSubtrees(
     // Else, compare individual children: For every child
     for (int i = 0; i < 8; ++i) {
 
-        // If the child bits don't match, increment diff
+        // If the child bits don't match, compare...
         if (nA.existsChild(i) != nB.existsChild(i)) {
             if (levA == _levels - 2) {
                 // If we're at the level above the leaves, simply check how different they are
@@ -185,7 +233,7 @@ void GeomOctree::diffSubtrees(
                 continue;
             } else {
                 // If it's at a higher level, abort
-                // Todo: Could still be a match in some weird edge cases
+                // Todo: Could still be a match in some weird edge cases, e.g. if a parent contains 1 child which contains 1 voxel
                 accumulator += abortThreshold;
                 return;
             }
@@ -816,6 +864,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
     // Todo: Find a way to loop only once instead of for every lossy diff
     // E.g., allow 1 or 2 more diff for each level above the leaves
+    // Or maybe not: While faster to compute that would not output a result with a minimum amount of loss
 
     // Continue lossy compression until the desired size percentage is reached
     bool reachedTarget = false;
@@ -830,7 +879,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
         // The higher of a diff we allow, the earlier we should stop in the graph (stop the loop over levels earlier)
         // A high difference in a low level is worse than a high difference in a higher level
         // Todo: At which level do we start? Lev 1 makes logical sense, levs/2 makes practical sense
-        for (unsigned int levA = _levels  - 2; levA < _levels - 1; ++levA) {
+        for (unsigned int levA = _levels - 2; levA < _levels - 1; ++levA) {
             printf(" - L%u.. ", levA); fflush(stdout);
 
             // Build new match maps for the lowest levels with lower depths, when those nodes do not have subtrees of that depth
@@ -873,11 +922,14 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
                                 nMatches++;
                                 multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
                                 refCounts[levA][idA] = 0;
+//                                refCounts[levB][idB] += 1;
+                                i = 64;
                                 break;
 //                            }
                         }
                     }
                 } else {
+                    printf("SHOULDNT REACH THIS\n");
                     auto candidates = matchMaps[levB].equal_range(nAKey);
 
                     // Loop over candidates starting with most referenced one
@@ -920,21 +972,23 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
     }
 
     // Decrement ref counts for nodes without references
+    // Todo: keep in mind this doesn't work for effective ref counts
+    // Todo: should rename "effective ref count" to "svo ref count" or something
     int nIndirectRemovedNodes = 0;
-    for (unsigned int lev = 1; lev < _levels; ++lev) {
-        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-            if (refCounts[lev][nodeIndex] == 0) {
-                nIndirectRemovedNodes++;
-                // Decrement ref counts for its children
-                const auto &n = _data[lev][nodeIndex];
-                for (int c = 0; c < 8; ++c) {
-                    if (n.existsChildPointer(c)) {
-                        refCounts[lev + 1][n.children[c]] -= 1;
-                    }
-                }
-            }
-        }
-    }
+//    for (unsigned int lev = 1; lev < _levels; ++lev) {
+//        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+//            if (refCounts[lev][nodeIndex] == 0) {
+//                nIndirectRemovedNodes++;
+//                // Decrement ref counts for its children
+//                const auto &n = _data[lev][nodeIndex];
+//                for (int c = 0; c < 8; ++c) {
+//                    if (n.existsChildPointer(c)) {
+//                        refCounts[lev + 1][n.children[c]] -= 1;
+//                    }
+//                }
+//            }
+//        }
+//    }
 
 
 #if 0
@@ -977,16 +1031,22 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
         std::vector<id_t> correspondences(_data[lev].size(), (id_t) -1); // normal correspondences for this level (old index -> new index) for those that are not removed
 
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-            if (refCounts[lev][nodeIndex] == 0) continue; // skip nodes without references
+//            if (refCounts[lev][nodeIndex] == 0) continue; // skip nodes without references
+            // NO: We need to update the pointers if they are not referenced anymore, else random stuff will happen!
+
 
             // Only keep nodes in uniqueNodes that do not have a correspondence in a higher level
             if (multiLevelCorrespondences[lev].count(nodeIndex) == 0) {
                 correspondences[nodeIndex] = uniqueNodes.size();
                 uniqueNodes.push_back(_data[lev][nodeIndex]);
+            } else {
+                auto it = multiLevelCorrespondences[lev].find(nodeIndex);
+                auto[corLevel, corId] = it->second;
+                correspondences[nodeIndex] = it->second.second;
             }
         }
 
-        printf("- L%u: %zu -> %zu\n", lev, _data[lev].size(), uniqueNodes.size());
+        printf("- L%u: %zu -> %zu. \t", lev, _data[lev].size(), uniqueNodes.size());
 
         // Replace node data for this level
         _data[lev].clear();
@@ -1001,7 +1061,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
         // Update all pointers in the level above
         for (id_t nodeIndex = 0; nodeIndex < _data[lev-1].size(); ++nodeIndex) {
-            if (refCounts[lev - 1][nodeIndex] == 0) continue;
+//            if (refCounts[lev - 1][nodeIndex] == 0) continue;
             Node *node = &_data[lev - 1][nodeIndex];
             // For all children...
             for (int j = 0; j < 8; j++) {
@@ -1009,24 +1069,26 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
                 if (node->existsChild(j)) {
                     // If it has no normal correspondence, it should be replaced with a lossy replacement
                     if (correspondences[node->children[j]] == (id_t) - 1) {
-                        // it was replaced by a subtree higher up
-                        auto it = multiLevelCorrespondences[lev].find(node->children[j]);
-                        if (it == multiLevelCorrespondences[lev].end()) { exit(1); }
-                        node->childLevels[j] = it->second.first;
-                        node->children[j] = it->second.second;
-                        // Node order in a higher level will change in future iteration...
-                        // Therefore, the next loop updates pointers of nodes in lower level that point to nodes in this level
-                        numReplaced++;
+//                        // it was replaced by a subtree higher up
+//                        auto it = multiLevelCorrespondences[lev].find(node->children[j]);
+//                        if (it == multiLevelCorrespondences[lev].end()) { exit(1); }
+//                        node->childLevels[j] = it->second.first;
+//                        node->children[j] = it->second.second;
+//                        // Node order in a higher level will change in future iteration...
+//                        // Therefore, the next loop updates pointers of nodes in lower level that point to nodes in this level
+//                        numReplaced++;
+                        printf("MISSING CORRESPONDENCE! ");
                     } else {
                         // Else, update the index from the normal list of correspondences
                         node->children[j] = correspondences[node->children[j]];
-                        numRemained++;
+//                        numRemained++;
                     }
                 }
             }
         }
+        printf("\n");
 
-        printf(" - L %i Replaced/remained: %i / %i\n", lev, numReplaced, numRemained);
+        printf(" Replaced/remained: %i / %i\n", numReplaced, numRemained);
     }
 
     _stats.nNodesDAG = _nNodes;
@@ -1051,7 +1113,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
 }
 
-//void GeomOctree::toLossyDag3() {
+void GeomOctree::toLossyDag3() {
     //
     // Before starting anew:
     /*
@@ -1059,15 +1121,180 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
      * Problem: Too many detail is lost, even though diff is 1: E.g. large holes appear
      * - Hypothesis 1: Cascade of lossy errors
      * - How to (dis)prove this: Only perform on a single level
-     * - Result: [experiment now]
-     *      - Merging on 1 level does not cause missing corresponences. However, it seems like the diff is larger than 1
+     * - Result: [experiment]
+     *      - In some cases, it looks like the diff is larger than 1
+     *      - Looks like the diff checking is happening at one level too high
+     *      - No, I'm certain: There are nodes appearing where it was completely empty before.
+     *        Even in the level above, the diff is at least 2 in this particular case, while the max was 1...
+     *        Something smells fishy...
+     *        Oh no.. Could it be that the pointers are updated one level higher than they're supposed to?
+     *        Hmm, in other cases if works as intended: Only 1 diff at correct level
      * - How to resolve this: "Freeze" subtrees that are a match target.
      *      - Risk: Not taking into account ref counts of nodes in the subtree, only the root
      *
      * - Hypothesis 2: Pointer update mistake
      * -
      */
-//}
+
+
+    // can't figure it out
+
+    ///////////////////////////////////////
+    // From scratch:
+    ///////////////////////////////////////
+    /*
+     * Main idea: Find nodes in the DAG that are similar, merge them together, until a target number is reached
+     * - Nodes are similar if the children in the leaf level are almost identical
+     * - Removing nodes that are referenced frequently will result in more loss than those that are infrequently referenced
+     * - - The reference count must take into account how often their parents are referenced as well, not just the individual node
+     * - Merging two nodes in this manner might result in some child-nodes ending up unreferenced -> indirect gains
+     * - - Q: can this be taken into account in the merging process?
+     * - A node of which its parent was merged should be merged, as that will cause a cascade of lossy errors (more loss than intended)
+     * - - Therefore, prefer to merge nodes with a node that has many references over one that only has a few
+     */
+
+    // Sort nodes based on effective number of references
+
+    /*
+     * Approach for finding similar nodes:
+     * - Top-down/bottom-up: Doesn't matter, as long as it's infrequently referenced
+     * - - Easier to do top-down: Then you can keep track of which children can be skipped, when already merged
+     * - - Though, might not be needed when using effective ref count: Nodes with > 1 ref are skipped
+     * - Comparison method: Compute hash based on all children, except the leaf level
+     * - - For the candidate matches, compare leaf child masks to find match with least difference
+     * - Preventing lossy error cascade
+     * - - Check whether a node is a match before attempting to merge
+     */
+
+    /*
+     * Pointer updating:
+     * Option 1: Filter out nodes with 0 references
+     * Option 2: Create new list, put all children in the list but check whether they already are in there first
+     * Either case: Keep track of correspondences
+     */
+
+    // Maybe perform similarly to toDAG():
+    // - For each level, merge and update pointers immediately afterwards (per level)
+
+    if (_state == S_DAG) {
+        printf("* Transforming DAG -> Lossy DAG3 ... \n");
+    } else {
+        printf("ERROR! This is not a DAG!\n");
+        return;
+    }
+
+    auto refCounts = this->sortByEffectiveRefCount();
+
+
+    _nNodes = 1;
+    /** Every index denotes the index of the first duplicate of that node in uniqueNodes. Reset for each level. */
+    std::vector<id_t> correspondences;
+    std::vector<Node> uniqueNodes;
+    std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
+    std::map<id_t, bool> existingMatchChecker;
+
+    sl::time_point ts = _clock.now();
+
+    // For every level, starting at two levels above the leaves...
+    // Todo: Add exception for level above the leaves
+    for (unsigned int lev = _levels - 3; lev > 0; --lev) {
+        // Clear the lists used to keep track of correspondences etc
+        size_t oldLevSize = _data[lev].size();
+        uniqueNodes.clear();
+        uniqueNodes.shrink_to_fit();
+        correspondences.clear();
+        correspondences.resize(oldLevSize, (id_t)-1);
+        existingMatchChecker.clear();
+
+        printf("Level %u: ", lev); fflush(stdout);
+
+        // Compute node hashes for this node and its children up to the level above the leaves
+        unsigned int currentMatchDepth = _levels - lev - 2;
+        buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
+
+        bool tooManyRefsPrinted = false;
+
+        // For all nodes in this level, in reverse order (starting with least referenced)
+        for (id_t idA = _data[lev].size(); idA --> 0 ;) {
+//            printf("%zu ", idA); fflush(stdout);
+            Node n = _data[lev][idA];
+            uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
+
+            // Break when ref count is greater than 1
+            if (refCounts[lev][idA] == 1) {
+                auto candidates = matchMaps[lev].equal_range(nAKey);
+                for (auto it = candidates.first; it != candidates.second; ++it) {
+                    id_t idB = it->second;
+                    if (idA == idB) continue; // don't match with itself
+                    if (refCounts[lev][idB] == 1) {
+                        // We don't want to merge with nodes that are reffed once.
+                        // Could break here maybe, as candidates should be in high->low ref order (i think maybe)
+                        continue;
+                    }
+                    // Also continue if idB is already a correspondence to another node
+//                    if (std::find(correspondences.begin(), correspondences.end(), idB) != correspondences.end()) {
+                    if (existingMatchChecker.count(idB) > 0) {
+                        continue;
+                    }
+
+                    // Check how similar this node actually is
+                    const Node &nB = _data[lev][idB];
+
+                    const int lossyDiff = 1; // should be outside variable: maximum allowed lossy diff
+
+                    unsigned int diff = 0;
+                    this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
+                    if (diff <= lossyDiff) {
+                        correspondences[idA] = idB;
+                        existingMatchChecker[idB] = true;
+                        break;
+                    }
+                }
+            } else if (!tooManyRefsPrinted) {
+                tooManyRefsPrinted = true;
+                printf("Ref count > 1 at lev %u at index %zi out of %zu\n", lev, idA, _data[lev].size());
+            }
+
+            if (correspondences[idA] == (id_t) -1) { // !found
+                correspondences[idA] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
+                uniqueNodes.push_back(n);
+            }
+        }
+
+        printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+
+        /////////////////////////////////
+        // Replace previous level data
+        _data[lev].clear();
+        _data[lev].shrink_to_fit();
+        uniqueNodes.shrink_to_fit();
+        _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
+        _data[lev].shrink_to_fit();
+        _nNodes += _data[lev].size();
+
+        /////////////////////////////////
+        // Update all pointers in the level above
+        for (id_t i = 0; i < _data[lev-1].size(); i++) {
+            Node * bn = &_data[lev-1][i];
+            // For all children...
+            for (int j = 0; j < 8; j++) {
+                // If this child exists...
+                if (bn->existsChild(j)) {
+                    // Set the child pointer to the unique node that replaced this child
+                    bn->children[j] = correspondences[bn->children[j]];
+                }
+            }
+        }
+    }
+
+    _stats.toDAGTime = _clock.now() - ts;
+
+    _state = S_DAG;
+    _stats.nNodesDAG = _nNodes;
+
+    printf("OK! [%s]\n", sl::human_readable_duration(_stats.toDAGTime).c_str());
+
+}
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////// CROSS LEVEL MERGING /////////////////////////
@@ -1748,7 +1975,7 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
 
     // Check to see if floodfill works: Set all inside nodes to bitmask with 1
-#if 1
+#if 0
     printf("DEBUG: Setting inside nodes to first node of level...\n");
     for (int lev = _levels - 1; lev >= 0; --lev) {
         for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {
@@ -1766,5 +1993,125 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
 
     printf("Done with flood fill! %u leaves outside of geometry\n", numOutsideLeafs);
+}
+
+void GeomOctree::toHiddenGeometryDAG() {
+
+    // Same as normal DAG, but ignore the nodes that are inside of geometry
+    // Also compare with most common referenced nodes first
+
+    printf("* Performing hidden geometry exploitation... "); fflush(stdout);
+
+    // Subtree comparison
+    // Option 1.
+    // - Precompute hashes for all 256 posibilities of the inside mask
+    // - Computational speedup possible from current implementation: Perform bottom-up instead of from scratch
+    // - Note: Needs to be computed before toDAG, so there will be a large amount of nodes...
+
+    printf(" * - Preparing hash maps:"); fflush(stdout);
+    // For every combination of hidden child masks (256) > For every level > For every node
+    std::vector<std::vector<std::multimap<uint64_t, id_t>>> hidChildMatchMaps;
+    std::vector<std::vector<std::vector<uint64_t>>> hidChildHashes;
+    for (int i = 0; i < 256; i++) {
+        if (i % 16 == 0) {
+            printf("%.2f%% ", 100.0 * i / 256.0); fflush(stdout);
+        }
+        hidChildMatchMaps.emplace_back(std::vector<std::multimap<uint64_t, id_t>>(_levels));
+        hidChildHashes.emplace_back(std::vector<std::vector<uint64_t>>(_levels));
+
+        // Compute all candidate match maps for all levels where the hidden child mask equals i
+        buildMultiMapBotUp(hidChildMatchMaps[i], hidChildHashes[i], i);
+    }
+    printf("\n");
+
+    ///////////////////////////////////////////////////////
+    // Todo: Other option: Modify SVO to an optimal state, so that we can call toDAG as usual
+
+    printf(" * - Converting to DAG:\n");
+    // Now perform toDAG and check for matches 256 times
+    _nNodes = 1;
+    std::vector<id_t> correspondences;
+    std::vector<Node> uniqueNodes;
+
+    // For every level, starting at the leaves...
+    for (unsigned int lev = _levels - 2; lev > 0; --lev) {
+        // Clear the lists used to keep track of correspondences etc
+        size_t oldLevSize = _data[lev].size();
+        uniqueNodes.clear();
+        uniqueNodes.shrink_to_fit();
+        correspondences.clear();
+        correspondences.resize(oldLevSize);
+
+        bool foundMatch = false;
+
+        // For all nodes in this level...
+        // Todo: compare to most referenced first?
+        for (id_t i = 0; i < _data[lev].size(); i++) {
+            Node n = _data[lev][i];
+            if (!n.hasChildren()) continue; // skip empty nodes
+//            if (lev == 1) {
+//                printf("Node %i has hash %u", i, hidChildHashes[i][lev][0])
+//            }
+
+            // If this node is already used as a unique node, skip it
+            if (std::find(correspondences.begin(), correspondences.end(), i) != correspondences.end()) {
+                continue;
+            }
+
+            uint64_t hash = hidChildHashes[n.outsideMask][lev][i];
+
+            for (int h = 0; h < 256; h++) {
+                auto candidates = hidChildMatchMaps[h][lev].equal_range(hash);
+                for (auto it = candidates.first; it != candidates.second; ++it) {
+                    id_t matchId = it->second;
+                    if (matchId != i) {
+                        // Todo: Deep comparison?
+                        foundMatch = true;
+                        correspondences[i] = matchId; // store duplicate node
+                        break;
+                    }
+                }
+                if (foundMatch) break;
+            }
+
+
+            if (!foundMatch) { // !found
+                correspondences[i] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
+                uniqueNodes.push_back(n);
+            }
+        }
+
+//        if (!iternalCall)
+            printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+
+        _data[lev].clear();
+        _data[lev].shrink_to_fit();
+        uniqueNodes.shrink_to_fit();
+        _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
+        _data[lev].shrink_to_fit();
+        _nNodes += _data[lev].size();
+
+        // Update all pointers in the level above
+        for (id_t i = 0; i < _data[lev-1].size(); i++) {
+            Node * bn = &_data[lev-1][i];
+            // For all children...
+            for (int j = 0; j < 8; j++) {
+                // If this child exists...
+                if (bn->existsChild(j)) {
+                    // Set the child pointer to the unique node that replaced this child
+                    bn->children[j] = correspondences[bn->children[j]];
+                }
+            }
+        }
+    }
+
+//    _stats.toDAGTime = _clock.now() - ts;
+
+    _state = S_DAG;
+    _stats.nNodesDAG = _nNodes;
+
+
+    // Option 2.
+    // - Use set intersections to find which nodes to compare to
 }
 
