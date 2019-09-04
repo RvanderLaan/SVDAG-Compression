@@ -446,6 +446,33 @@ std::vector<std::vector<unsigned int>> GeomOctree::sortByEffectiveRefCount() {
         _data[lev] = sortedNodes;
     }
     printf(" Done!\n");
+
+
+#if 1
+    printf("DEBUG: Check how often nodes are referenced [effective ref count]\n");
+    unsigned int histSize = 10; // num of ref counts to keep track of
+
+    // csv header
+    printf("Level");
+    for (unsigned int i = 1; i < histSize; ++i) {
+        printf(", %u", i);
+    }
+    printf(", Total nodes\n");
+
+    for (unsigned int lev = 1; lev < _levels; ++lev) {
+//        printf("- LEVEL %u, total nodes: %zu\n", lev, _data[lev].size());
+        std::vector<unsigned int> hist(histSize);
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+            hist[std::min(refCounts[lev][nodeIndex], (unsigned int) (histSize - 1))] += 1;
+        }
+        printf("%u", lev);
+        for (unsigned int i = 1; i < histSize; ++i) {
+            printf(", %u", hist[i]);
+        }
+        printf(", %zu\n", _data[lev].size());
+    }
+#endif
+
     return refCounts;
 }
 
@@ -1114,7 +1141,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 }
 
 void GeomOctree::toLossyDag3() {
-    //
+    // Reimplementation of toLossyDag2
     // Before starting anew:
     /*
      * Why doesn't toLossyDag2 work?
@@ -1185,74 +1212,121 @@ void GeomOctree::toLossyDag3() {
 
     auto refCounts = this->sortByEffectiveRefCount();
 
-
     _nNodes = 1;
     /** Every index denotes the index of the first duplicate of that node in uniqueNodes. Reset for each level. */
     std::vector<id_t> correspondences;
     std::vector<Node> uniqueNodes;
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
-    std::map<id_t, bool> existingMatchChecker;
+    std::map<id_t, bool> currentMatches, previousMatches;
 
     sl::time_point ts = _clock.now();
 
+    unsigned int nMatchesTotal = 0;
+
     // For every level, starting at two levels above the leaves...
     // Todo: Add exception for level above the leaves
-    for (unsigned int lev = _levels - 3; lev > 0; --lev) {
+    for (unsigned int lev = _levels - 2; lev > 0; --lev) {
         // Clear the lists used to keep track of correspondences etc
         size_t oldLevSize = _data[lev].size();
         uniqueNodes.clear();
         uniqueNodes.shrink_to_fit();
         correspondences.clear();
         correspondences.resize(oldLevSize, (id_t)-1);
-        existingMatchChecker.clear();
+        currentMatches.clear();
+        currentMatches.swap(previousMatches);
 
         printf("Level %u: ", lev); fflush(stdout);
 
         // Compute node hashes for this node and its children up to the level above the leaves
-        unsigned int currentMatchDepth = _levels - lev - 2;
+        unsigned int currentMatchDepth = std::max(_levels - lev - 2, 1u);
         buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
 
         bool tooManyRefsPrinted = false;
+        unsigned int nMatches = 0, potentialNodes = 0;
 
         // For all nodes in this level, in reverse order (starting with least referenced)
         for (id_t idA = _data[lev].size(); idA --> 0 ;) {
-//            printf("%zu ", idA); fflush(stdout);
             Node n = _data[lev][idA];
             uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
 
+            bool skip = false;
+            for (int c = 0; c < 8; c++) { // don't merge nodes that are a parent of a correspondence match
+                if (n.existsChildPointer(c) && previousMatches.count(n.children[c]) > 0) {
+                    currentMatches[idA] = true;
+                    skip = true;
+                    break;
+                }
+            }
+
             // Break when ref count is greater than 1
-            if (refCounts[lev][idA] == 1) {
-                auto candidates = matchMaps[lev].equal_range(nAKey);
-                for (auto it = candidates.first; it != candidates.second; ++it) {
-                    id_t idB = it->second;
-                    if (idA == idB) continue; // don't match with itself
-                    if (refCounts[lev][idB] == 1) {
-                        // We don't want to merge with nodes that are reffed once.
-                        // Could break here maybe, as candidates should be in high->low ref order (i think maybe)
-                        continue;
+            if (!skip && refCounts[lev][idA] == 1) {
+
+                if (lev == _levels - 2) {
+                    for (int i = 0; i < 64; ++i) {
+                        uint64_t nAKeyMod = nAKey ^(1UL << i);
+                        auto candidates = matchMaps[lev].equal_range(nAKeyMod);
+                        for (auto it = candidates.first; it != candidates.second; ++it) {
+                            id_t idB = it->second;
+                            if (idA == idB) continue; // don't match with itself
+                            if (refCounts[lev][idB] == 1) continue; // continue if this node was already merged
+//                            if (currentMatches.count(idB) > 0) continue;
+
+                            id_t idBNew = correspondences[idB];
+                            if (idBNew == (id_t) -1) { // not added as unique node yet
+                                correspondences[idB] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
+                                Node nB = _data[lev][idB];
+                                uniqueNodes.push_back(nB);
+                            }
+
+                            correspondences[idA] = idBNew;
+                            currentMatches[idB] = true;
+                            i = 64;
+                            nMatches++;
+                            break;
+                        }
                     }
-                    // Also continue if idB is already a correspondence to another node
-//                    if (std::find(correspondences.begin(), correspondences.end(), idB) != correspondences.end()) {
-                    if (existingMatchChecker.count(idB) > 0) {
-                        continue;
-                    }
+                } else {
+                    auto candidates = matchMaps[lev].equal_range(nAKey);
+                    for (auto it = candidates.first; it != candidates.second; ++it) {
+                        id_t idB = it->second;
+                        if (idA == idB) continue; // don't match with itself
+                        if (refCounts[lev][idB] == 1) {
+                            // We don't want to merge with nodes that are reffed once.
+                            // Could break here maybe, as candidates should be in high->low ref order (i think maybe)
+                            continue;
+                        }
+                        // Also continue if idB is already a correspondence to another node
+                        // This means a node can't be more than 1 match target... no bueno
+//                        if (currentMatches.count(idB) > 0) {
+//                             Shouldn't be needed, as we only merge nodes with 1 ref, and avoid to merge it with nodes that have 1 ref
+//                             Maybe still for child/parent relations though
+//                            continue;
+//                        }
 
-                    // Check how similar this node actually is
-                    const Node &nB = _data[lev][idB];
+                        // Check how similar this node actually is
+                        Node nB = _data[lev][idB];
 
-                    const int lossyDiff = 1; // should be outside variable: maximum allowed lossy diff
+                        const int lossyDiff = (_levels - lev) * 4; // should be outside variable: maximum allowed lossy diff
 
-                    unsigned int diff = 0;
-                    this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
-                    if (diff <= lossyDiff) {
-                        correspondences[idA] = idB;
-                        existingMatchChecker[idB] = true;
-                        break;
+                        unsigned int diff = 0;
+                        this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
+                        if (diff <= lossyDiff) {
+                            id_t idBNew = correspondences[idB];
+                            if (idBNew == (id_t) -1) { // not added as unique node yet
+                                correspondences[idB] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
+                                uniqueNodes.push_back(nB);
+                            }
+
+                            correspondences[idA] = idBNew;
+                            currentMatches[idB] = true;
+                            nMatches++;
+                            break;
+                        }
                     }
                 }
             } else if (!tooManyRefsPrinted) {
                 tooManyRefsPrinted = true;
-                printf("Ref count > 1 at lev %u at index %zi out of %zu\n", lev, idA, _data[lev].size());
+                printf(" - Ref count > 1 at lev %u at index %zi out of %zu\n", lev, idA, _data[lev].size());
             }
 
             if (correspondences[idA] == (id_t) -1) { // !found
@@ -1261,7 +1335,8 @@ void GeomOctree::toLossyDag3() {
             }
         }
 
-        printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+        printf(" - Reduced level %u from %lu to %lu nodes (%u matches)\n", lev, _data[lev].size(), uniqueNodes.size(), nMatches);
+        nMatchesTotal += nMatches;
 
         /////////////////////////////////
         // Replace previous level data
@@ -1289,10 +1364,13 @@ void GeomOctree::toLossyDag3() {
 
     _stats.toDAGTime = _clock.now() - ts;
 
-    _state = S_DAG;
     _stats.nNodesDAG = _nNodes;
 
     printf("OK! [%s]\n", sl::human_readable_duration(_stats.toDAGTime).c_str());
+
+    this->sortByEffectiveRefCount(); // only for getting new ref counts
+
+    this->toDAG(false); // filter out new identical nodes (small probability, but might as well check)
 
 }
 

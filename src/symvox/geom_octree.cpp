@@ -447,7 +447,7 @@ unsigned int GeomOctree::cleanEmptyNodes() {
  */
 void GeomOctree::toDAG(bool iternalCall) {
 
-	if (_state == S_SVO) {
+	if (_state == S_SVO || _state == S_DAG) {
 		if (!iternalCall) printf("* Transforming SVO -> DAG ... "); fflush(stdout);
 	} else {
 		printf("ERROR! This is not a SVO!\n");

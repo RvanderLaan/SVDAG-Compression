@@ -196,7 +196,7 @@ int main(int argc, char ** argv) {
 		svdag2.save(basePath + "-multi.svdag");
 	}
 
-    if (!lossy && !multiLevel && !lossy2 && !exploitHiddenGeom) {
+    if (!lossy && !multiLevel && !exploitHiddenGeom) {
         octree.toSDAG(false, false);
     }
 
