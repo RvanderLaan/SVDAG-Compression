@@ -1210,6 +1210,7 @@ void GeomOctree::toLossyDag3() {
         return;
     }
 
+
     auto refCounts = this->sortByEffectiveRefCount();
 
     _nNodes = 1;
@@ -1217,15 +1218,17 @@ void GeomOctree::toLossyDag3() {
     std::vector<id_t> correspondences;
     std::vector<Node> uniqueNodes;
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
-    std::map<id_t, bool> currentMatches, previousMatches;
+    std::map<id_t, bool> currentMatches, previousMatches, uniqueNodesChecker;
 
     sl::time_point ts = _clock.now();
 
     unsigned int nMatchesTotal = 0;
 
     // For every level, starting at two levels above the leaves...
-    // Todo: Add exception for level above the leaves
     for (unsigned int lev = _levels - 2; lev > 0; --lev) {
+
+        const int lossyDiff = (_levels - lev) * 4; // should be outside variable: maximum allowed lossy diff
+
         // Clear the lists used to keep track of correspondences etc
         size_t oldLevSize = _data[lev].size();
         uniqueNodes.clear();
@@ -1234,6 +1237,7 @@ void GeomOctree::toLossyDag3() {
         correspondences.resize(oldLevSize, (id_t)-1);
         currentMatches.clear();
         currentMatches.swap(previousMatches);
+        uniqueNodesChecker.clear();
 
         printf("Level %u: ", lev); fflush(stdout);
 
@@ -1242,21 +1246,21 @@ void GeomOctree::toLossyDag3() {
         buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
 
         bool tooManyRefsPrinted = false;
-        unsigned int nMatches = 0, potentialNodes = 0;
+        unsigned int nMatches = 0;
 
         // For all nodes in this level, in reverse order (starting with least referenced)
         for (id_t idA = _data[lev].size(); idA --> 0 ;) {
             Node n = _data[lev][idA];
             uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
 
-            bool skip = false;
-            for (int c = 0; c < 8; c++) { // don't merge nodes that are a parent of a correspondence match
-                if (n.existsChildPointer(c) && previousMatches.count(n.children[c]) > 0) {
-                    currentMatches[idA] = true;
-                    skip = true;
-                    break;
-                }
-            }
+            bool skip = false; // todo: Might be able to disable this, should test it
+//            for (int c = 0; c < 8; c++) { // don't merge nodes that are a parent of a correspondence match
+//                if (n.existsChildPointer(c) && previousMatches.count(n.children[c]) > 0) {
+//                    currentMatches[idA] = true;
+//                    skip = true;
+//                    break;
+//                }
+//            }
 
             // Break when ref count is greater than 1
             if (!skip && refCounts[lev][idA] == 1) {
@@ -1268,14 +1272,18 @@ void GeomOctree::toLossyDag3() {
                         for (auto it = candidates.first; it != candidates.second; ++it) {
                             id_t idB = it->second;
                             if (idA == idB) continue; // don't match with itself
-                            if (refCounts[lev][idB] == 1) continue; // continue if this node was already merged
-//                            if (currentMatches.count(idB) > 0) continue;
 
                             id_t idBNew = correspondences[idB];
+//                            if (refCounts[lev][idB] == 1) continue; // continue if candidate has only 1 ref
+                            // continue if 1 ref and idB has already been merged (so already has a correspondence and not a unique node)
+                            if (refCounts[lev][idB] == 1
+                                && idBNew != (id_t) -1 && uniqueNodesChecker.count(idB) == 0) continue;
+
                             if (idBNew == (id_t) -1) { // not added as unique node yet
                                 correspondences[idB] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
                                 Node nB = _data[lev][idB];
                                 uniqueNodes.push_back(nB);
+                                uniqueNodesChecker[idB] = true;
                             }
 
                             correspondences[idA] = idBNew;
@@ -1287,41 +1295,51 @@ void GeomOctree::toLossyDag3() {
                     }
                 } else {
                     auto candidates = matchMaps[lev].equal_range(nAKey);
+                    // Find best candidate. Might take a bit longer, but results in more accurate result
+                    // Todo: Could set a maximum iteration count.
+                    id_t bestCandidate = -1;
+                    unsigned int bestDiff = 999999;
                     for (auto it = candidates.first; it != candidates.second; ++it) {
                         id_t idB = it->second;
                         if (idA == idB) continue; // don't match with itself
-                        if (refCounts[lev][idB] == 1) {
-                            // We don't want to merge with nodes that are reffed once.
-                            // Could break here maybe, as candidates should be in high->low ref order (i think maybe)
-                            continue;
-                        }
-                        // Also continue if idB is already a correspondence to another node
-                        // This means a node can't be more than 1 match target... no bueno
-//                        if (currentMatches.count(idB) > 0) {
-//                             Shouldn't be needed, as we only merge nodes with 1 ref, and avoid to merge it with nodes that have 1 ref
-//                             Maybe still for child/parent relations though
-//                            continue;
-//                        }
+
+                        // We don't want to merge with nodes that are reffed once.
+                        // Could break here maybe, as candidates should be in high->low ref order (i think maybe)
+//                        if (refCounts[lev][idB] == 1) continue;
+
+                        // continue if 1 ref and idB has already been checked and not unique (so already has a correspondence and not a unique node)
+                        id_t idBNew = correspondences[idB];
+                        if (refCounts[lev][idB] == 1
+                            && idBNew != (id_t) -1 && uniqueNodesChecker.count(idB) == 0) continue;
 
                         // Check how similar this node actually is
                         Node nB = _data[lev][idB];
-
-                        const int lossyDiff = (_levels - lev) * 4; // should be outside variable: maximum allowed lossy diff
-
                         unsigned int diff = 0;
                         this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
-                        if (diff <= lossyDiff) {
-                            id_t idBNew = correspondences[idB];
-                            if (idBNew == (id_t) -1) { // not added as unique node yet
-                                correspondences[idB] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
-                                uniqueNodes.push_back(nB);
-                            }
 
-                            correspondences[idA] = idBNew;
-                            currentMatches[idB] = true;
-                            nMatches++;
-                            break;
+                        // "Score" should be based on diff, ref count and whether it's already a unique node (?)
+                        if (diff < bestDiff ||
+                            ((diff == bestDiff && bestCandidate != (id_t) -1 && refCounts[lev][bestCandidate] < refCounts[lev][idB]))) {
+                            bestCandidate = idB;
+                            bestDiff = diff;
+                            if (diff == 1) break;
+                            if (diff <= lossyDiff) break; // Todo: remove this just for testing why finding best candidate results in higher file size
                         }
+                    }
+
+                    if (bestDiff <= lossyDiff) {
+                        id_t idB = bestCandidate;
+                        id_t idBNew = correspondences[idB];
+                        if (idBNew == (id_t) -1) { // not added as unique node yet
+                            correspondences[idB] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
+                            Node nB = _data[lev][idB];
+                            uniqueNodes.push_back(nB);
+                            uniqueNodesChecker[idB] = true;
+                        }
+
+                        correspondences[idA] = idBNew;
+                        currentMatches[idB] = true;
+                        nMatches++;
                     }
                 }
             } else if (!tooManyRefsPrinted) {
