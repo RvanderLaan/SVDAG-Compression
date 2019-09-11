@@ -1322,8 +1322,10 @@ void GeomOctree::toLossyDag3() {
                             ((diff == bestDiff && bestCandidate != (id_t) -1 && refCounts[lev][bestCandidate] < refCounts[lev][idB]))) {
                             bestCandidate = idB;
                             bestDiff = diff;
+                            // Todo: Increment ref counts for faster checking which candidates are prefererred?
                             if (diff == 1) break;
                             if (diff <= lossyDiff) break; // Todo: remove this just for testing why finding best candidate results in higher file size
+                            // Compression shouldn't change... Only nodes with 1 ref are used if they are already unique
                         }
                     }
 
@@ -2071,7 +2073,7 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
 
     // Check to see if floodfill works: Set all inside nodes to bitmask with 1
-#if 0
+#if 1
     printf("DEBUG: Setting inside nodes to first node of level...\n");
     for (int lev = _levels - 1; lev >= 0; --lev) {
         for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {
@@ -2081,6 +2083,10 @@ void GeomOctree::hiddenGeometryFloodfill() {
                     parent.setChildBit(c);
                     parent.children[c] = 0;
                 }
+//                if (parent.existsChild(c) && parent.getChildOutsideBit(c)) {
+//                    _data[lev][nodeId].unsetChildBit(c);
+//                    _data[lev][nodeId].children[c] = 0;
+//                }
             }
         }
     }
@@ -2103,6 +2109,9 @@ void GeomOctree::toHiddenGeometryDAG() {
     // - Precompute hashes for all 256 posibilities of the inside mask
     // - Computational speedup possible from current implementation: Perform bottom-up instead of from scratch
     // - Note: Needs to be computed before toDAG, so there will be a large amount of nodes...
+
+    // Todo: For memory issues, try to merge to a DAG while also taking into account the outsideMask
+    // High likelihood that identical nodes have an identical outsideMask, at least in lower levels
 
     printf(" * - Preparing hash maps:"); fflush(stdout);
     // For every combination of hidden child masks (256) > For every level > For every node
@@ -2130,7 +2139,7 @@ void GeomOctree::toHiddenGeometryDAG() {
     std::vector<Node> uniqueNodes;
 
     // For every level, starting at the leaves...
-    for (unsigned int lev = _levels - 2; lev > 0; --lev) {
+    for (unsigned int lev = _levels - 2; lev > 1; --lev) {
         // Clear the lists used to keep track of correspondences etc
         size_t oldLevSize = _data[lev].size();
         uniqueNodes.clear();
@@ -2205,6 +2214,32 @@ void GeomOctree::toHiddenGeometryDAG() {
 
     _state = S_DAG;
     _stats.nNodesDAG = _nNodes;
+
+
+    // It's been a while, rewriting pseudoce as a fresh view
+    /**
+     * Input: SVO with an outsideMask for each node, specifying whether the node is visible from the outside
+     * Goal: Merging nodes that appear the same from the outside
+     * - This is where the visible side of a node is identical to that same part of another node, and the invisible part is arbitrary
+     * - So, for each node, look for a node that has the same outside mask, or where there are more parts on the outside
+     *
+     * Nodes are put into multimaps to find them quickly, based on their children and outsideMask
+     * - We have a node A, and we look for another node B that we can merge it with
+     * - We compute a hash for node A, and variations for each of the bits in the outsideMask that are inside
+     * - We only need 1 multi-map as usual, which integrates the outsideMask for each hash, since we look for each of the variations by computing different hashs for A
+     *
+     * Seems like it should work
+     * * For every node
+     *   - If it is partially inside
+     *     - Create hashes for all possible candidates (each hash of the node with one of the inside bits off)
+     *     - Find best candidate
+     * *
+     *
+     * For what is left over:
+     *   - If it completely inside, remove all children
+     *
+     * Todo: Does it matter
+     */
 
 
     // Option 2.

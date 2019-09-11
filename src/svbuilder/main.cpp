@@ -139,7 +139,8 @@ int main(int argc, char ** argv) {
             octree.toLossyDAG();
         } else if (exploitHiddenGeom) {
             octree.hiddenGeometryFloodfill();
-            octree.toHiddenGeometryDAG();
+//            octree.toHiddenGeometryDAG();
+            octree.toDAG();
         } else {
             octree.toDAG();
         }
