@@ -149,7 +149,11 @@ uint voxel_to_linear_idx(in const ivec3 mirror_mask, in ivec3 idx, in const int 
 #define LEAF_SIZE 2
 
 uint myFetch(in const int idx) {
-	const uvec4 tmp = texelFetch(nodes, idx/4);
+	// On AMD GPUs this causes some problems for files > 32 MM. Took some time to find this out
+	// The idx is signed, so cast it to unsigned
+	// const uvec4 tmp = texelFetch(nodes, idx/4);
+	const uvec4 tmp = texelFetch(nodes, int(uint(idx)/4));
+
 	const int selected = idx%4;
 	uint result;
 	if      (selected == 0) result = tmp.x;
@@ -178,7 +182,7 @@ void fetch_child_index_in(inout traversal_status ts) {
 #define LEAF_SIZE 2
 
 uint myFetch(in const int idx) {
-	const uvec4 tmp = texelFetch(nodes, idx/4);
+	const uvec4 tmp = texelFetch(nodes, int(uint(idx)/4));
 	const int selected = idx%4;
 	uint result;
 	if      (selected == 0) result = tmp.x;
@@ -245,7 +249,7 @@ uint myInnerHeaderFetch(in const int idx) {
 }
 #else
 ivec2 myInnerFetch(in const int idx) {
-	const int realIdx = idx/4;
+	const int realIdx = int(uint(idx)/4);
 	const ivec4 tmp = ivec4(texelFetch(innerNodes, realIdx));
 	const int selected = idx - realIdx * 4;
 	ivec2 result;
@@ -260,7 +264,7 @@ ivec2 myInnerFetch(in const int idx) {
 }
 
 uint myInnerHeaderFetch(in const int idx) {
-	const int realIdx = idx/4;
+	const int realIdx = int(uint(idx)/4);
 	const uvec4 tmp = texelFetch(innerNodes, realIdx);
 	const int selected = idx - realIdx * 4;
 	uint result;

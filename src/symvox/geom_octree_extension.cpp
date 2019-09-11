@@ -1346,7 +1346,7 @@ void GeomOctree::toLossyDag3() {
                 }
             } else if (!tooManyRefsPrinted) {
                 tooManyRefsPrinted = true;
-                printf(" - Ref count > 1 at lev %u at index %zi out of %zu\n", lev, idA, _data[lev].size());
+                printf(" - Ref count > 1 at lev %u at index %zu out of %zu\n", lev, idA, _data[lev].size());
             }
 
             if (correspondences[idA] == (id_t) -1) { // !found
