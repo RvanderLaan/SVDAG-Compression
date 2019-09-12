@@ -1068,7 +1068,7 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
                 uniqueNodes.push_back(_data[lev][nodeIndex]);
             } else {
                 auto it = multiLevelCorrespondences[lev].find(nodeIndex);
-                auto[corLevel, corId] = it->second;
+                //auto[corLevel, corId] = it->second;
                 correspondences[nodeIndex] = it->second.second;
             }
         }
@@ -1226,6 +1226,9 @@ void GeomOctree::toLossyDag3() {
 
     // For every level, starting at two levels above the leaves...
     for (unsigned int lev = _levels - 2; lev > 0; --lev) {
+		_clock.restart();
+		sl::time_duration timeStamp = _clock.elapsed();
+		int stepLogger = (int)round(_data[lev].size() / 10.0f);
 
         const int lossyDiff = (_levels - lev) * 4; // should be outside variable: maximum allowed lossy diff
 
@@ -1250,6 +1253,11 @@ void GeomOctree::toLossyDag3() {
 
         // For all nodes in this level, in reverse order (starting with least referenced)
         for (id_t idA = _data[lev].size(); idA --> 0 ;) {
+			if ((idA % stepLogger == 0)) {
+				printf("%.0f%%..", round(100.f * (idA / (float)_data[lev].size())));
+				fflush(stdout);
+			}
+
             Node n = _data[lev][idA];
             uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
 
@@ -1324,7 +1332,7 @@ void GeomOctree::toLossyDag3() {
                             bestDiff = diff;
                             // Todo: Increment ref counts for faster checking which candidates are prefererred?
                             if (diff == 1) break;
-                            if (diff <= lossyDiff) break; // Todo: remove this just for testing why finding best candidate results in higher file size
+                            //if (diff <= lossyDiff) break; // Todo: remove this just for testing why finding best candidate results in higher file size
                             // Compression shouldn't change... Only nodes with 1 ref are used if they are already unique
                         }
                     }
@@ -1346,10 +1354,12 @@ void GeomOctree::toLossyDag3() {
                 }
             } else if (!tooManyRefsPrinted) {
                 tooManyRefsPrinted = true;
-                printf(" - Ref count > 1 at lev %u at index %zi out of %zu\n", lev, idA, _data[lev].size());
+                printf(" - Ref count > 1 @ %zi / %zu. ", idA, _data[lev].size());
+				printf("OK! [%s]\n", sl::human_readable_duration(_clock.elapsed() - timeStamp).c_str()); fflush(stdout);
             }
 
-            if (correspondences[idA] == (id_t) -1) { // !found
+			// No correspondence found, so add as a unique node
+            if (correspondences[idA] == (id_t) -1) {
                 correspondences[idA] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
                 uniqueNodes.push_back(n);
             }
@@ -2073,7 +2083,7 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
 
     // Check to see if floodfill works: Set all inside nodes to bitmask with 1
-#if 1
+#if 0
     printf("DEBUG: Setting inside nodes to first node of level...\n");
     for (int lev = _levels - 1; lev >= 0; --lev) {
         for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {

@@ -34,6 +34,7 @@ EncodedSSVDAG::EncodedSSVDAG() {
 }
 
 EncodedSSVDAG::~EncodedSSVDAG() {
+	printf("Cleaning up EncodedSSVDAG...\n");
     _dataLeaves.clear();
     _dataLeaves.shrink_to_fit();
     _dataInner.clear();

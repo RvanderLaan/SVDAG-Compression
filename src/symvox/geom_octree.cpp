@@ -286,7 +286,6 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	printf("\t- Building root SVO subtree... ");
 	
 	buildSVO(stepLevels, bbox, true, &leavesCenters);
-//	hiddenGeometryFloodfill();
 	
 	printf("OK! [%s]\n", sl::human_readable_duration(_clock.elapsed() - timeStamp).c_str()); fflush(stdout);
 

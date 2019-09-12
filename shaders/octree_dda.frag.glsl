@@ -62,6 +62,8 @@ uniform int viewerRenderMode;
 uniform uint selectedVoxelIndex;
 uniform bool randomColors;
 uniform vec3 lightPos;
+uniform bool enableShadows;
+uniform float normalEpsilon;
 #elif SHADOW_MODE
 uniform sampler2D hitPosTex;
 uniform sampler2D hitNormTex;
@@ -670,7 +672,8 @@ void main() {
 #endif
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
 	vec4 result = trace_ray(r, t_min_max, projectionFactor);
-	const float epsilon = 1E-6f;// * result.y;
+//	const float epsilon = 1E-6f;
+	const float epsilon = 1E-3f * result.y;
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -713,23 +716,27 @@ void main() {
 			t *= max(dot(hitNorm, normalize(lightPos - hitPos)), 0.5);
 			
 			// ====Shadow====
-			// Trace ray to light pos
-//			const vec3 p = hitPos + hitNorm * cellSize * 0.5;
-//			r.o = lightPos;
-//			const vec3 lightToP = p - lightPos;
-//			const float lightToPLength = length(lightToP);
-//			r.d = normalize(lightToP);
-//			vec2 t_min_max = vec2(0, lightToPLength);
-//			vec4 shd_result = trace_ray(r, t_min_max, projectionFactor);
+			if (enableShadows) {
+			
 
+				// Trace ray to light pos
+				const vec3 p = hitPos + hitNorm * cellSize * 0.5;
+				const vec3 lightToP = p - lightPos;
+				const float lightToPLength = length(lightToP);
 
-			// Light fall-off
-//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
-//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+				r.o = lightPos;
+				r.d = normalize(lightToP);
+				vec2 t_min_max = vec2(0, lightToPLength);
+				vec4 shd_result = trace_ray(r, t_min_max, projectionFactor);
 
-			// Add shadows
-//			t = (shd_result.x > 0) ? t / 2.0 : t;
-//			t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
+				// Light fall-off
+	//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+	//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+
+				// Add shadows
+				t = (shd_result.x > 0) ? t / 2.0 : t;
+//				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
+			}
 		}
 	
 		color = vec3(t, t, t);

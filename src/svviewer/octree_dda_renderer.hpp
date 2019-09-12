@@ -62,6 +62,8 @@ public:
 	inline int getSelectedVoxelIndex() { return _selectedVoxelIndex; }
 	inline bool getRandomColors() { return _randomColors; }
 	inline void toggleRandomColors() { _randomColors = !_randomColors; }
+	inline bool getShadowsEnabled() { return _enableShadows; }
+	inline void toggleShadowsEnabled() { _enableShadows = !_enableShadows; }
 
 	inline sl::aabox3f getSceneBBox() { return _encodedOctree->getSceneBBox(); }
 	inline void setEncodedOctree(EncodedOctree * eo) { _encodedOctree = eo; }
@@ -88,6 +90,7 @@ public:
 	inline void setViewerRenderMode(int mode) { _viewerRenderMode = mode; }
 	inline int getViewerRenderMode() { return _viewerRenderMode; }
 	inline void setLightPos(sl::point3f p) { _lightPos = p; }
+	inline sl::point3f getLightPos() { return _lightPos; }
 
 	inline void toggleUseMinDepthOptimization() { _useMinDepthOptimization = !_useMinDepthOptimization; }
 	inline bool getUseMinDepthOptimization() { return _useMinDepthOptimization; }
@@ -121,6 +124,7 @@ protected:
 	int _viewerRenderMode;
 	int _selectedVoxelIndex;
 	bool _randomColors;
+	bool _enableShadows;
 
 	// params mode SHADOW
 	sl::point3f _lightPos;

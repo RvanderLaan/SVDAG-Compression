@@ -34,6 +34,7 @@ private:
 	};
 public:
 	EncodedSVO();
+	~EncodedSVO();
 
 	// EncodedOctree interface
 	virtual bool load(const std::string filename);

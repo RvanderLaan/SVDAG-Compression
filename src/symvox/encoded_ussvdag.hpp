@@ -34,6 +34,7 @@ class EncodedUSSVDAG : public EncodedOctree {
 
 public:
 	EncodedUSSVDAG() {}
+	~EncodedUSSVDAG();
 
 	virtual bool load(const std::string filename);
 	virtual bool save(const std::string filename) const;

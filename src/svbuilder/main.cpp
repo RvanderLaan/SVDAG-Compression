@@ -117,6 +117,8 @@ int main(int argc, char ** argv) {
             exploitHiddenGeom = true;
 	}
 
+	printf("Lossy2: %d, Cross-level: %d, Hidden geom: %d\n", lossy2, multiLevel, exploitHiddenGeom);
+
 	GeomOctree octree(&scene);
 
 	//sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
