@@ -172,6 +172,8 @@ int main(int argc, char ** argv) {
 
     octree.initChildLevels();
 
+	octree.DebugHashing();
+
     if (lossy2) {
 //        octree.toLossyDAG2(lossyTargetPct);
         octree.toLossyDag3();

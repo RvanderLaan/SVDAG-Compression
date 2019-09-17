@@ -49,13 +49,17 @@ uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int 
     // For higher depths, combine all children keys with XOR
     else {
         for (unsigned int c = 0; c < 8; ++c) {
-            if (node.existsChildPointer(c)) {
-                const auto &child = _data[node.childLevels[c]][node.children[c]];
-                uint64_t childKey = computeNodeHash(child, depth - 1);
+            const auto &child = _data[node.childLevels[c]][node.children[c]];
+            uint64_t origKeyHash = hash64(key);
+            uint64_t childKey = 0;
 
-                key = key << 1u; // bit shift so that identical child hashes don't cancel each other out
-                key = hash64(key) ^ hash64(childKey); // xor of hash of current key and child key
+            if (node.existsChildPointer(c)) {
+                childKey = computeNodeHash(child, depth - 1);
             }
+
+            // bit shift so that identical child hashes don't cancel each other out
+            key = (origKeyHash << 1u) ^ hash64(childKey); // xor of hash of current key and child key
+            key = key ^ origKeyHash; // Hash with original key to make the hash truly asymmetrical
         }
     }
     return key;
@@ -1140,6 +1144,45 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
 }
 
+void GeomOctree::DebugHashing() {
+    printf("DEBUG: Check how often hash collisions happen]\n");
+    unsigned int histSize = 10; // num of collision counts to keep track of
+
+    std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
+
+    // csv header
+    printf("Level, Depth");
+    for (unsigned int i = 1; i < histSize; ++i) {
+        printf(", %u", i);
+    }
+    printf(", Total hashes, Total nodes\n");
+
+    // TODO: Currently it does not print collisions, but many hashes are identical for the lossy compression approach
+    // where hashes are computed without the leaf level
+
+    for (unsigned int lev = _levels - 2; lev > 0; --lev) {
+        std::vector<unsigned int> hist(histSize);
+
+        printf("Level %u: ,", lev); fflush(stdout);
+
+        // Compute node hashes for this node and its children up to the level above the leaves
+        unsigned int currentMatchDepth = std::max(_levels - lev - 1, 1u);
+        buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
+
+        // Loop over every unique hash
+        const auto& mm = matchMaps[lev];
+        for(auto it = mm.begin(), end = mm.end(); it != end; it = mm.upper_bound(it->first)) {
+            unsigned int count = mm.count(it->first);
+            hist[std::min(count, (unsigned int) (histSize - 1))] += 1;
+        }
+//        printf("%u", lev);
+        for (unsigned int i = 1; i < histSize; ++i) {
+            printf(", %u", hist[i]);
+        }
+        printf(", %zu, %zu\n", mm.size(), _data[lev].size());
+    }
+}
+
 void GeomOctree::toLossyDag3() {
     // Reimplementation of toLossyDag2
     // Before starting anew:
@@ -1364,6 +1407,12 @@ void GeomOctree::toLossyDag3() {
                 uniqueNodes.push_back(n);
             }
         }
+
+        // Clustering stage:
+        // - Any node might have one or more potential matches, however, we can only pick one
+        // - We prefer to match nodes with a node that is referenced more than once
+        // - Then, find which nodes are potential matches the most frequently
+
 
         printf(" - Reduced level %u from %lu to %lu nodes (%u matches)\n", lev, _data[lev].size(), uniqueNodes.size(), nMatches);
         nMatchesTotal += nMatches;
