@@ -51,14 +51,14 @@ uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int 
         for (unsigned int c = 0; c < 8; ++c) {
             const auto &child = _data[node.childLevels[c]][node.children[c]];
             uint64_t origKeyHash = hash64(key);
-            uint64_t childKey = 0;
+            uint64_t childHash = origKeyHash << (c + 1u); // add some pseudo randomness when no child is at index c
 
             if (node.existsChildPointer(c)) {
-                childKey = computeNodeHash(child, depth - 1);
+                childHash = hash64(computeNodeHash(child, depth - 1));
             }
 
             // bit shift so that identical child hashes don't cancel each other out
-            key = (origKeyHash << 1u) ^ hash64(childKey); // xor of hash of current key and child key
+            key = (origKeyHash << 1u) ^ childHash; // xor of hash of current key and child key
             key = key ^ origKeyHash; // Hash with original key to make the hash truly asymmetrical
         }
     }
@@ -135,6 +135,43 @@ void GeomOctree::buildMultiMapBotUp(std::vector<std::multimap<uint64_t, id_t>> &
         }
     }
 //    printf("]"); fflush(stdout);
+}
+
+void GeomOctree::DebugHashing() {
+    printf("DEBUG: Check how often hash collisions happen]\n");
+    unsigned int histSize = 10; // num of collision counts to keep track of
+
+    std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
+
+    // csv header
+    printf("Level, Depth");
+    for (unsigned int i = 1; i < histSize; ++i) {
+        printf(", %u", i);
+    }
+    printf(", Total hashes, Total nodes\n");
+
+    for (unsigned int lev = _levels - 2; lev > 0; --lev) {
+        std::vector<unsigned int> hist(histSize);
+
+        printf("Level %u: ,", lev); fflush(stdout);
+
+        // Compute node hashes for this node and its children up to the level above the leaves
+        // Modify _levels - 1 to -2 to see how hashes collide when ignoring the leaf level
+        unsigned int currentMatchDepth = std::max(_levels - lev - 2, 1u);
+        buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
+
+        // Loop over every unique hash
+        const auto& mm = matchMaps[lev];
+        for(auto it = mm.begin(), end = mm.end(); it != end; it = mm.upper_bound(it->first)) {
+            unsigned int count = mm.count(it->first);
+            hist[std::min(count, (unsigned int) (histSize - 1))] += 1;
+        }
+//        printf("%u", lev);
+        for (unsigned int i = 1; i < histSize; ++i) {
+            printf(", %u", hist[i]);
+        }
+        printf(", %zu, %zu\n", mm.size(), _data[lev].size());
+    }
 }
 
 
@@ -1144,45 +1181,6 @@ void GeomOctree::toLossyDAG2(float qualityPct) {
 
 }
 
-void GeomOctree::DebugHashing() {
-    printf("DEBUG: Check how often hash collisions happen]\n");
-    unsigned int histSize = 10; // num of collision counts to keep track of
-
-    std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
-
-    // csv header
-    printf("Level, Depth");
-    for (unsigned int i = 1; i < histSize; ++i) {
-        printf(", %u", i);
-    }
-    printf(", Total hashes, Total nodes\n");
-
-    // TODO: Currently it does not print collisions, but many hashes are identical for the lossy compression approach
-    // where hashes are computed without the leaf level
-
-    for (unsigned int lev = _levels - 2; lev > 0; --lev) {
-        std::vector<unsigned int> hist(histSize);
-
-        printf("Level %u: ,", lev); fflush(stdout);
-
-        // Compute node hashes for this node and its children up to the level above the leaves
-        unsigned int currentMatchDepth = std::max(_levels - lev - 1, 1u);
-        buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
-
-        // Loop over every unique hash
-        const auto& mm = matchMaps[lev];
-        for(auto it = mm.begin(), end = mm.end(); it != end; it = mm.upper_bound(it->first)) {
-            unsigned int count = mm.count(it->first);
-            hist[std::min(count, (unsigned int) (histSize - 1))] += 1;
-        }
-//        printf("%u", lev);
-        for (unsigned int i = 1; i < histSize; ++i) {
-            printf(", %u", hist[i]);
-        }
-        printf(", %zu, %zu\n", mm.size(), _data[lev].size());
-    }
-}
-
 void GeomOctree::toLossyDag3() {
     // Reimplementation of toLossyDag2
     // Before starting anew:
@@ -1273,6 +1271,7 @@ void GeomOctree::toLossyDag3() {
 		sl::time_duration timeStamp = _clock.elapsed();
 		int stepLogger = (int)round(_data[lev].size() / 10.0f);
 
+		// Todo: Should depend on how many leaf nodes there are (missing) on the source node
         const int lossyDiff = (_levels - lev) * 4; // should be outside variable: maximum allowed lossy diff
 
         // Clear the lists used to keep track of correspondences etc
