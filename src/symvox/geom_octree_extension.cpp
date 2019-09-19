@@ -7,8 +7,10 @@
 #include <queue>
 #include <stack>
 #include <fstream>
+#include <iomanip>      // std::setprecision
 
 #include "geom_octree.hpp"
+#include "cluster.hpp"
 
 ////////////////////////////////////////////////////////////////////
 /////////////////////// HELPER FUNCTIONS ///////////////////////////
@@ -1244,6 +1246,18 @@ void GeomOctree::toLossyDag3() {
     // Maybe perform similarly to toDAG():
     // - For each level, merge and update pointers immediately afterwards (per level)
 
+    /**
+     * NEW new idea:
+     * - For each level, starting at bottom:
+     *   - Find all candidates for nodes with 1 ref to other nodes with 1 ref
+     *      (note: could also be nodes with 2, 3, 4 refs)
+     *   - Compute node clusters (only for nodes with few references)
+     *   - Make list of unique nodes (center of clusters)
+     *   - If a cluster center is similar to a node with more references, use that one
+     *   - Replace duplicate nodes
+     *   - Update parent pointers
+     */
+
     if (_state == S_DAG) {
         printf("* Transforming DAG -> Lossy DAG3 ... \n");
     } else {
@@ -1265,6 +1279,8 @@ void GeomOctree::toLossyDag3() {
 
     unsigned int nMatchesTotal = 0;
 
+    printf("Comparing nodes before clustering... "); fflush(stdout);
+
     // For every level, starting at two levels above the leaves...
     for (unsigned int lev = _levels - 2; lev > 0; --lev) {
 		_clock.restart();
@@ -1272,7 +1288,9 @@ void GeomOctree::toLossyDag3() {
 		int stepLogger = (int)round(_data[lev].size() / 10.0f);
 
 		// Todo: Should depend on how many leaf nodes there are (missing) on the source node
-        const int lossyDiff = (_levels - lev) * 4; // should be outside variable: maximum allowed lossy diff
+        const int lossyDiff = (int) (_levels - lev) * 2; // should be outside variable: maximum allowed lossy diff
+
+        std::vector<cluster::Edge> edges;
 
         // Clear the lists used to keep track of correspondences etc
         size_t oldLevSize = _data[lev].size();
@@ -1290,17 +1308,16 @@ void GeomOctree::toLossyDag3() {
         unsigned int currentMatchDepth = std::max(_levels - lev - 2, 1u);
         buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
 
-        bool tooManyRefsPrinted = false;
-        unsigned int nMatches = 0;
-
+        //////// FINDING EDGES FOR CLUSTERING ////////
         // For all nodes in this level, in reverse order (starting with least referenced)
         for (id_t idA = _data[lev].size(); idA --> 0 ;) {
 			if ((idA % stepLogger == 0)) {
 				printf("%.0f%%..", round(100.f * (idA / (float)_data[lev].size())));
 				fflush(stdout);
 			}
+            if (refCounts[lev][idA] > 1) break; // only cluster nodes with 1 ref
 
-            Node n = _data[lev][idA];
+            const Node &n = _data[lev][idA];
             uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
 
             bool skip = false; // todo: Might be able to disable this, should test it
@@ -1321,89 +1338,40 @@ void GeomOctree::toLossyDag3() {
                         auto candidates = matchMaps[lev].equal_range(nAKeyMod);
                         for (auto it = candidates.first; it != candidates.second; ++it) {
                             id_t idB = it->second;
-                            if (idA == idB) continue; // don't match with itself
+                            if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
+                            if (refCounts[lev][idB] != 1) continue; // Only compare to other 1 ref nodes
 
-                            id_t idBNew = correspondences[idB];
-//                            if (refCounts[lev][idB] == 1) continue; // continue if candidate has only 1 ref
-                            // continue if 1 ref and idB has already been merged (so already has a correspondence and not a unique node)
-                            if (refCounts[lev][idB] == 1
-                                && idBNew != (id_t) -1 && uniqueNodesChecker.count(idB) == 0) continue;
 
-                            if (idBNew == (id_t) -1) { // not added as unique node yet
-                                correspondences[idB] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
-                                Node nB = _data[lev][idB];
-                                uniqueNodes.push_back(nB);
-                                uniqueNodesChecker[idB] = true;
-                            }
+                            // Todo: Also check if idB has been compared with idA before. Double the work
+                            // To avoid two identical edges, only add edges from low id to high id
 
-                            correspondences[idA] = idBNew;
-                            currentMatches[idB] = true;
-                            i = 64;
-                            nMatches++;
-                            break;
+                            edges.emplace_back(cluster::Edge{ idA, idB, 1});
+                            uniqueNodesChecker[idA] = false;
+                            uniqueNodesChecker[idB] = false;
                         }
                     }
                 } else {
                     auto candidates = matchMaps[lev].equal_range(nAKey);
-                    // Find best candidate. Might take a bit longer, but results in more accurate result
-                    // Todo: Could set a maximum iteration count.
-                    id_t bestCandidate = -1;
-                    unsigned int bestDiff = 999999;
+
                     for (auto it = candidates.first; it != candidates.second; ++it) {
                         id_t idB = it->second;
-                        if (idA == idB) continue; // don't match with itself
-
-                        // We don't want to merge with nodes that are reffed once.
-                        // Could break here maybe, as candidates should be in high->low ref order (i think maybe)
-//                        if (refCounts[lev][idB] == 1) continue;
-
-                        // continue if 1 ref and idB has already been checked and not unique (so already has a correspondence and not a unique node)
-                        id_t idBNew = correspondences[idB];
-                        if (refCounts[lev][idB] == 1
-                            && idBNew != (id_t) -1 && uniqueNodesChecker.count(idB) == 0) continue;
+                        if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
+                        if (refCounts[lev][idB] != 1) continue; // Only compare to other 1 ref nodes
 
                         // Check how similar this node actually is
-                        Node nB = _data[lev][idB];
+                        const Node &nB = _data[lev][idB];
                         unsigned int diff = 0;
                         this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
 
-                        // "Score" should be based on diff, ref count and whether it's already a unique node (?)
-                        if (diff < bestDiff ||
-                            ((diff == bestDiff && bestCandidate != (id_t) -1 && refCounts[lev][bestCandidate] < refCounts[lev][idB]))) {
-                            bestCandidate = idB;
-                            bestDiff = diff;
-                            // Todo: Increment ref counts for faster checking which candidates are prefererred?
-                            if (diff == 1) break;
-                            //if (diff <= lossyDiff) break; // Todo: remove this just for testing why finding best candidate results in higher file size
-                            // Compression shouldn't change... Only nodes with 1 ref are used if they are already unique
+                        if (diff <= lossyDiff) {
+                            // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
+                            float sim = 1.0f - ((float) diff / ((float) lossyDiff + 1.0f));
+                            edges.emplace_back(cluster::Edge{ idA, idB, sim});
+                            uniqueNodesChecker[idA] = false;
+                            uniqueNodesChecker[idB] = false;
                         }
-                    }
-
-                    if (bestDiff <= lossyDiff) {
-                        id_t idB = bestCandidate;
-                        id_t idBNew = correspondences[idB];
-                        if (idBNew == (id_t) -1) { // not added as unique node yet
-                            correspondences[idB] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
-                            Node nB = _data[lev][idB];
-                            uniqueNodes.push_back(nB);
-                            uniqueNodesChecker[idB] = true;
-                        }
-
-                        correspondences[idA] = idBNew;
-                        currentMatches[idB] = true;
-                        nMatches++;
                     }
                 }
-            } else if (!tooManyRefsPrinted) {
-                tooManyRefsPrinted = true;
-                printf(" - Ref count > 1 @ %zi / %zu. ", idA, _data[lev].size());
-				printf("OK! [%s]\n", sl::human_readable_duration(_clock.elapsed() - timeStamp).c_str()); fflush(stdout);
-            }
-
-			// No correspondence found, so add as a unique node
-            if (correspondences[idA] == (id_t) -1) {
-                correspondences[idA] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
-                uniqueNodes.push_back(n);
             }
         }
 
@@ -1411,10 +1379,33 @@ void GeomOctree::toLossyDag3() {
         // - Any node might have one or more potential matches, however, we can only pick one
         // - We prefer to match nodes with a node that is referenced more than once
         // - Then, find which nodes are potential matches the most frequently
+        printf("- Clustering... "); fflush(stdout);
+        const std::vector<std::vector<unsigned int>> clusters = cluster::MCL(edges);
+        printf(" Done! "); fflush(stdout);
 
+        //////// COMPARING CLUSTERS TO OTHER NODES ////////
+        for (id_t idA = 0; idA < _data[lev].size(); ++idA) {
+            // Add all nodes with > 1 ref to uniqueNodes
+            if (refCounts[lev][idA] == 1 && uniqueNodesChecker.find(idA) != uniqueNodesChecker.end()) continue;
+            correspondences[idA] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
+            uniqueNodes.push_back(_data[lev][idA]);
+        }
 
-        printf(" - Reduced level %u from %lu to %lu nodes (%u matches)\n", lev, _data[lev].size(), uniqueNodes.size(), nMatches);
-        nMatchesTotal += nMatches;
+        // Replacing nodes from clusters
+        for (unsigned int c = 0; c < clusters.size(); ++c) {
+            id_t repId = clusters[c][0]; // Representative node
+            id_t repIdNew = uniqueNodes.size();
+
+            // Add representative as unique node
+            // Todo: Check if there is a node with many existing references that suffices
+            uniqueNodes.push_back(_data[lev][repId]);
+            correspondences[repId] = repIdNew;
+
+            // The correspondence of all nodes in this cluster is the representative node
+            for (const id_t corId : clusters[c]) {
+                correspondences[corId] = repIdNew;
+            }
+        }
 
         /////////////////////////////////
         // Replace previous level data
@@ -1451,6 +1442,7 @@ void GeomOctree::toLossyDag3() {
     this->toDAG(false); // filter out new identical nodes (small probability, but might as well check)
 
 }
+
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////// CROSS LEVEL MERGING /////////////////////////
