@@ -39,6 +39,9 @@ find_package(GLEW)
 # Optional, for parsing LAS files
 find_package(LIBLAS)
 
+# For lossy compression clustering
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+
 ############### Options
 IF(OpenGL_FOUND AND GLFW_FOUND AND GLEW_FOUND)
 	SET(BUILD_SVVIEWER TRUE CACHE BOOL "Build SymVox GL Viewer")
@@ -105,7 +108,6 @@ INCLUDE_DIRECTORIES( ${GLFW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${GLEW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${LIBLAS_INCLUDE_DIRS} )
 
-
 #############################################################
 ##################### SYMVOX LIBRARY ###########################
 #############################################################
@@ -131,9 +133,12 @@ ADD_LIBRARY( symvox
 	src/symvox/octree_node.cpp
 	src/symvox/util.hpp
 	shaders/octree_dda.frag.glsl
-        src/symvox/geom_octree_extension.cpp)
+	src/symvox/geom_octree_extension.cpp
+	src/symvox/cluster.cpp src/symvox/cluster.hpp
+)
 
-TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
+TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES} Eigen3::Eigen)
+
 
 #############################################################
 ####################### SYMVOX BUILDER #########################

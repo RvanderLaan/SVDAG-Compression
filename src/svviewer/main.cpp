@@ -212,6 +212,7 @@ void handleImgui() {
 	int maxItersInput = renderer->getGPUTraversalMaxIters();
 	bool beamOptInput = renderer->getUseMinDepthOptimization();
 	bool randomColsInput = renderer->getRandomColors();
+	bool shadowsEnabledInput = renderer->getShadowsEnabled();
 	float pixTolInput = renderer->getPixelTolerance();
 	float fovInput = renderer->getFovH();
 	float walkFactorInput = renderer->getCamera()->getWalkFactor();
@@ -219,6 +220,10 @@ void handleImgui() {
 	const sl::point3f &camPos = renderer->getCamera()->getCurrentConfig().pos;
 	float camPosInput[]{ 0,0,0 };
 	camPosInput[0] = camPos[0]; camPosInput[1] = camPos[1]; camPosInput[2] = camPos[2];
+
+	const sl::point3f &lightPos = renderer->getLightPos();
+	float lightPosInput[]{ 0,0,0 };
+	lightPosInput[0] = lightPos[0]; lightPosInput[1] = lightPos[1]; lightPosInput[2] = lightPos[2];
 
 	const static char* renderModes[] = { "ITERATIONS", "DEPTH", "LEVELS", "PRETTY" };
 	int renderModeInput = renderer->getViewerRenderMode();
@@ -259,6 +264,8 @@ void handleImgui() {
             renderer->toggleUseMinDepthOptimization();
         if (ImGui::Checkbox("Random colors", &randomColsInput))
             renderer->toggleRandomColors();
+		if (ImGui::Checkbox("Shadows enabled (pretty render mode)", &shadowsEnabledInput))
+			renderer->toggleShadowsEnabled();
         if (ImGui::SliderFloat("Pixel tolerance", &pixTolInput, 0.0f, 4.0f))
             renderer->setPixelTolerance(pixTolInput);
         //if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
@@ -267,12 +274,17 @@ void handleImgui() {
         if (ImGui::SliderFloat("Move speed", &walkFactorInput, 0.0f, 4.0f))
             renderer->getCamera()->setWalkFactor(walkFactorInput);
 
-        if (ImGui::InputFloat3("Camera position", camPosInput, 2)) {
-            renderer->getCamera()->getCurrentConfig().pos[0] = camPosInput[0];
-            renderer->getCamera()->getCurrentConfig().pos[1] = camPosInput[1];
-            renderer->getCamera()->getCurrentConfig().pos[2] = camPosInput[2];
+        if (ImGui::DragFloat3("Camera position", camPosInput, 2)) {
+			sl::vector3f delta(camPosInput[0], camPosInput[1], camPosInput[2]);
+			delta -= renderer->getCamera()->getCurrentConfig().pos.as_vector();
+			renderer->getCamera()->getCurrentConfig().pos += delta;
+			renderer->getCamera()->getCurrentConfig().target += delta;
+			renderer->getCamera()->updateMatrices();
         }
 
+		if (ImGui::DragFloat3("Light position", lightPosInput, 2)) {
+			renderer->setLightPos(sl::point3f(lightPosInput[0], lightPosInput[1], lightPosInput[2]));
+		}
 
         if (ImGui::Combo("Render mode", &renderModeInput, renderModes, IM_ARRAYSIZE(renderModes))) {
             renderer->setViewerRenderMode(renderModeInput);

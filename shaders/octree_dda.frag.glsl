@@ -62,6 +62,8 @@ uniform int viewerRenderMode;
 uniform uint selectedVoxelIndex;
 uniform bool randomColors;
 uniform vec3 lightPos;
+uniform bool enableShadows;
+uniform float normalEpsilon;
 #elif SHADOW_MODE
 uniform sampler2D hitPosTex;
 uniform sampler2D hitNormTex;
@@ -383,7 +385,8 @@ bvec3 bvec3_and(const bvec3 one, const bvec3 two) {
 	return bvec3(uvec3(one) & uvec3(two));
 }
 
-void dda_next(inout traversal_status ts) {
+// Returns the direction of the step
+ivec3 dda_next(inout traversal_status ts) {
 	const bvec3 b1 = lessThan(ts.t_next_crossing.xyz, ts.t_next_crossing.yzx);
 	const bvec3 b2 = lessThanEqual(ts.t_next_crossing.xyz, ts.t_next_crossing.zxy);
 	const bvec3 mask = bvec3_and(b1, b2);
@@ -397,6 +400,7 @@ void dda_next(inout traversal_status ts) {
 	
 	ts.t_current = dot(mask_v3, ts.t_next_crossing);
 	ts.t_next_crossing += mask_v3 * ts.cell_size * abs(ts.inv_ray_d);
+	return delta;
 }
  	     
 ivec3 dda_next_delta_index(in const traversal_status ts) {
@@ -527,7 +531,7 @@ void init(inout Ray r, inout traversal_status ts) {
 //	Z: num Iterations used.
 //  W: node index (-1 => no intersection)
 
-vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
+vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, out vec3 norm) {
 	
 	if (!transform_ray(r, t_min_max))
 		return vec4(-4.0,0,0,-1); // out of scene Bbox
@@ -536,6 +540,8 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 	traversal_status ts;
 	ts.t_current = t_min_max.x;
 	init(r, ts);
+
+	ivec3 stepDir = ivec3(0);
 	
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);
@@ -543,7 +549,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 		bool full_voxel = fetch_voxel_bit(ts);
 	  
 		if (!full_voxel) {
-			dda_next(ts);
+			stepDir = dda_next(ts);
 			if (!in_bounds(ts.local_idx, ts.current_node_size)) {
 				if (stack_is_empty()) {
 					return vec4(-1.,0,float(iteration_count),-1); // inside scene BBox, but no intersection
@@ -553,6 +559,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 		} else {
 			const bool hit = (ts.level >= max_level || resolution_ok(ts.t_current, ts.cell_size, projection_factor)); 
 			if (hit) {
+				norm = -vec3(stepDir);
 				return vec4(ts.t_current * scale, ts.cell_size * scale, float(iteration_count), ts.node_index);  // intersection
 			} else {
 				down_in(r, ts);
@@ -568,11 +575,9 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor) {
 	return vec4(-2.,0,float(iteration_count), -1); // intersection out of t bounds
 }
 
-
 vec3 fromHomog(in const vec4 v) {
 	return v.xyz/v.w;
 }
-
 
 Ray computeCameraRay(in const vec2 pixelScreenCoords) {
 	const vec4 pixel_s0 = vec4(pixelScreenCoords.x, pixelScreenCoords.y, 0, 1);
@@ -668,9 +673,12 @@ void main() {
 		return;
 	}
 #endif
-	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-	vec4 result = trace_ray(r, t_min_max, projectionFactor);
-	const float epsilon = 1E-6f;// * result.y;
+	const float epsilon = 1E-3f;
+	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) - epsilon : 0, 1e30); // subtract epsilon for getting proper normal
+	vec3 hitNorm;
+	vec4 result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
+
+//	const float localEpsilon = 1E-3f * result.y;
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -691,49 +699,53 @@ void main() {
 			const float cellSize = result.y;
 
 			// ====Voxel normal direction====
-			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
+//			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
 			// Problem: adding r.d * eps causes the ray to cross the boundary to another voxel on around the edges
-			vec3 voxCenter = localHitPos - mod(localHitPos + r.d * epsilon, cellSize) + cellSize / 2.0;
-			voxCenter += sceneCenter; // Local -> global position
-			vec3 hitNorm = normalize(voxCenter - hitPos + r.d * epsilon);
+//			vec3 voxCenter = localHitPos - mod(localHitPos + r.d * localEpsilon, cellSize) + cellSize / 2.0;
+//			voxCenter += sceneCenter; // Local -> global position
+//			vec3 hitNorm = normalize(voxCenter - hitPos + r.d * localEpsilon);
 			
 			// The normal vector now points from the voxel center to the hit position like it's a sphere
 //			hitNorm = round(hitNorm); // rounding the normal gives a nice "tile" look
 
 			// This converts the spherical normal to a cube normal, setting only its maximum value to 1 (or min to -1)
-			vec3 absHN = abs(hitNorm);
-			float maxAbsHN = max(max(absHN.x, absHN.y), absHN.z);
-			hitNorm = -sign(hitNorm) * vec3(greaterThanEqual(absHN, vec3(maxAbsHN)));
+//			vec3 absHN = abs(hitNorm);
+//			float maxAbsHN = max(max(absHN.x, absHN.y), absHN.z);
+//			hitNorm = -sign(hitNorm) * vec3(greaterThanEqual(absHN, vec3(maxAbsHN)));
 
 			// This normal computation has some artifacts due to floating point precision
 			// Todo: proper normal derivation can be done by looking at the direction of the previous voxel during traversal
-			
+			// Yes this is much easier, the data is already there, got it from dda_next
+
 			// ====Diffuse shading====
 			vec3 lightDir = normalize(lightPos - hitPos);
-			t *= max(dot(hitNorm, normalize(lightPos - hitPos)), 0.5);
+			t *= 0.5 + 0.5 * max(dot(hitNorm, lightDir), 0);
 			
 			// ====Shadow====
-			// Trace ray to light pos
-//			const vec3 p = hitPos + hitNorm * cellSize * 0.5;
-//			r.o = lightPos;
-//			const vec3 lightToP = p - lightPos;
-//			const float lightToPLength = length(lightToP);
-//			r.d = normalize(lightToP);
-//			vec2 t_min_max = vec2(0, lightToPLength);
-//			vec4 shd_result = trace_ray(r, t_min_max, projectionFactor);
+			if (enableShadows) {
+				// Trace ray to light pos
+				const vec3 p = hitPos + hitNorm * cellSize * 0.5f; // center of voxel + half voxel size in dir of normal
+				const vec3 lightToP = p - lightPos;
+				const float lightToPLength = length(lightToP);
 
+				r.o = p;
+				r.d = -normalize(lightToP);
+				vec2 t_min_max = vec2(0, lightToPLength);
+				vec4 shd_result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
 
-			// Light fall-off
-//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
-//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+				// Light fall-off
+	//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+	//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
 
-			// Add shadows
-//			t = (shd_result.x > 0) ? t / 2.0 : t;
-//			t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
+				// Add shadows
+				t = (shd_result.x > 0) ? t / 2.0 : t;
+//				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
+			}
 		}
 	
-		color = vec3(t, t, t);
+		color = vec3(t, t, 1.0f);
 //		color = TurboColormap(t);
+//		color = hitNorm * 0.5 + vec3(0.5);
 
 		// Assign random colors based on the index of a node
 		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
@@ -781,7 +793,8 @@ void main() {
 	const vec2 screenCoords = (gl_FragCoord.xy/screenRes) * 2.0 - 1.0;
 	Ray r = computeCameraRay(screenCoords);	
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
-	vec4 result = trace_ray(r, t_min_max, projectionFactor);
+	vec3 norm;
+	vec4 result = trace_ray(r, t_min_max, projectionFactor, norm);
 	if (result.x > 0) // Intersection!!!
 		output_t = result.xyz;
 	else
@@ -806,7 +819,8 @@ void main() {
 	r.d = normalize(lightToP);
 	vec2 t_min_max = vec2(0, lightToPLength);
 	const float projFactor = lightToPLength / cellSize;
-	vec4 result = trace_ray(r, t_min_max, projFactor);
+	vec3 norm;
+	vec4 result = trace_ray(r, t_min_max, projFactor, norm);
 
 	output_t = (result.x > 0) ? 0.0 : 1.0;
 }
@@ -840,7 +854,8 @@ void main() {
 	for(int i=0; i<numAORays; i++) {
 		aoRay.d = normalize(tnb *  hsSamples[(i+int(gl_FragCoord.x*gl_FragCoord.y))%N_HS_SAMPLES]);
 		//aoRay.d = normalize(tnb *  hsSamples[i]);
-		vec4 result = trace_ray(aoRay, t_min_max, projFactor);
+		vec3 norm;
+		vec4 result = trace_ray(aoRay, t_min_max, projFactor, norm);
 		if(result.x > 0) k += 1.0;// - (result.x/0.3);
 	}
 	float visibility = (numAORays>0) ? 1.0 - (k/float(numAORays)) : 1.0;

@@ -35,6 +35,7 @@ EncodedSVDAG::EncodedSVDAG() : EncodedOctree() {
 }
 
 EncodedSVDAG::~EncodedSVDAG() {
+	printf("Cleaning up EncodedSVDAG...\n");
     _data.clear();
     _data.shrink_to_fit();
 }

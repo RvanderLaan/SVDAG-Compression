@@ -31,9 +31,7 @@ class EncodedOctree {
 public:
 	EncodedOctree() : _rootSide(0), _levels(0), _nVoxels(0), _nNodes(0), _nLeaves(0) { _sceneBBox.to_empty(); }
 
-	~EncodedOctree() {
-        printf("WARNING:~EncodedOctree Not implemented\n");
-	}
+	virtual ~EncodedOctree() { }
 
 	// Encoding and storaging interface---------------------------
 	virtual void encode(const GeomOctree & octree) = 0;

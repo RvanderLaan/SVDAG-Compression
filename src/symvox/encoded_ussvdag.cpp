@@ -23,6 +23,13 @@
 #include <symvox/encoded_ussvdag.hpp>
 #include <symvox/util.hpp>
 
+
+EncodedUSSVDAG::~EncodedUSSVDAG() {
+	printf("Cleaning up EncodedUSSVDAG...\n");
+	_data.clear();
+	_data.shrink_to_fit();
+}
+
 bool EncodedUSSVDAG::load(const std::string filename)
 {
 	printf("* Loading USSVDAG '%s'... ", filename.c_str()); fflush(stdout);

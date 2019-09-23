@@ -79,7 +79,7 @@ public:
 	inline sl::rigid_body_map3f getViewMatrix() { return _viewMatrix; }
 	inline sl::projective_map3f getProjMatrixInv() { return _projMatrixInv; }
 	inline sl::rigid_body_map3f getViewMatrixInv() { return _viewMatrixInv; }
-	inline Config getCurrentConfig() { return _cam; }
+	inline Config& getCurrentConfig() { return _cam; }
 	inline sl::point2f getCursorCoords() { return _coords; }
 	inline sl::point2f getCursorCoordsNorm() {
 		sl::point2f normCoords = sl::point2f(_coords);
@@ -95,6 +95,7 @@ public:
 	inline bool isPlayingWalkthrough() { return (_state == WT_PLAYING); }
 	
 	void printControls();
+	void updateMatrices();
 
 private:
 	typedef enum {
@@ -104,7 +105,6 @@ private:
 		PANNING
 	} TGesture;
 
-	void updateMatrices();
 	void reset();
 
 	sl::rigid_body_map3f _viewMatrix, _viewMatrixInv;

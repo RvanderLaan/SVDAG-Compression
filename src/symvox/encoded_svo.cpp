@@ -34,6 +34,12 @@ EncodedSVO::EncodedSVO() : EncodedOctree()
 	_data.clear();
 }
 
+EncodedSVO::~EncodedSVO() {
+	printf("Cleaning up EncodedSVO...\n");
+	_data.clear();
+	_data.shrink_to_fit();
+}
+
 bool EncodedSVO::load(const std::string filename)
 {
 

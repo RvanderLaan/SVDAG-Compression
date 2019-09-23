@@ -41,6 +41,7 @@ OctreeDDARenderer::OctreeDDARenderer(EncodedOctree * eo) {
 
 	_selectedVoxelIndex = 0;
 	_randomColors = true;
+	_enableShadows = false;
 	_lightPos = _encodedOctree->getSceneBBox()[1];
 
 	if (dynamic_cast<EncodedSVO*>(_encodedOctree) != NULL) {
@@ -412,6 +413,7 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 		glUniform1i(_program[_selectedRenderMode].getUniformID("viewerRenderMode"), _viewerRenderMode);
 		glUniform1ui(_program[_selectedRenderMode].getUniformID("selectedVoxelIndex"), _selectedVoxelIndex);
 		glUniform1i(_program[_selectedRenderMode].getUniformID("randomColors"), _randomColors);
+		glUniform1i(_program[_selectedRenderMode].getUniformID("enableShadows"), _enableShadows);
 
 	if (_selectedRenderMode == SHADOW || _selectedRenderMode == VIEWER)
 		glUniform3fv(_program[_selectedRenderMode].getUniformID("lightPos"), 1, _lightPos.to_pointer());

@@ -142,6 +142,8 @@ public:
 	size_t getMemFootprint();
 	int traverse(sl::point3f p) const;
 
+    void DebugHashing();
+
 private: // Internal tools
 	unsigned int cleanEmptyNodes();
 	void invertInvs(Node &n, int lev, bool inX, bool inY, bool inZ);
