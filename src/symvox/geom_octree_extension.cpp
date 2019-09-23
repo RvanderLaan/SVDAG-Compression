@@ -1318,6 +1318,7 @@ void GeomOctree::toLossyDag3() {
             if (refCounts[lev][idA] > 1) break; // only cluster nodes with 1 ref
 
             const Node &n = _data[lev][idA];
+            // Todo: Should use pre-computed hash to avoid cascade of lossy error
             uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
 
             bool skip = false; // todo: Might be able to disable this, should test it
@@ -1374,13 +1375,22 @@ void GeomOctree::toLossyDag3() {
                 }
             }
         }
+        
+        // Todo: Filter out pairs of nodes that only have 1 edge between each other
+        // Can make use of the fact that lowId always points to highId
+        // For every edge
+        // - Check whether the next edge originates from the same node
+        // - Check the amount of edges that the targetId has
+        // - Remove edge if this node has one edge and target node has no edges specified
+        // - Pick one of the two nodes as represenattive
+        
 
         // Clustering stage:
         // - Any node might have one or more potential matches, however, we can only pick one
         // - We prefer to match nodes with a node that is referenced more than once
         // - Then, find which nodes are potential matches the most frequently
         printf("- Clustering... "); fflush(stdout);
-        const std::vector<std::vector<unsigned int>> clusters = cluster::MCL(edges);
+        const std::vector<std::vector<unsigned int>> clusters = cluster::MCL(edges, lev);
         printf(" Done! "); fflush(stdout);
 
         //////// COMPARING CLUSTERS TO OTHER NODES ////////
@@ -1393,13 +1403,40 @@ void GeomOctree::toLossyDag3() {
 
         // Replacing nodes from clusters
         for (unsigned int c = 0; c < clusters.size(); ++c) {
+            // Todo: Closest node to center might not be the first node, should double check
             id_t repId = clusters[c][0]; // Representative node
             id_t repIdNew = uniqueNodes.size();
+            /*
+            const Node &n = _data[lev][repId];
+            uint64_t repKey = computeNodeHash(n, currentMatchDepth);
 
-            // Add representative as unique node
-            // Todo: Check if there is a node with many existing references that suffices
-            uniqueNodes.push_back(_data[lev][repId]);
-            correspondences[repId] = repIdNew;
+            // Check if there is an node with > 1 ref count similar to the representative
+            auto candidates = matchMaps[lev].equal_range(repKey);
+            for (auto it = candidates.first; it != candidates.second; ++it) {
+                id_t idB = it->second;
+                if (repId == idB) continue; // don't match with itself
+                if (refCounts[lev][idB] == 1) continue; // Only compare to nodes with more than 1 references
+
+                // Check how similar this node actually is
+                const Node &nB = _data[lev][idB];
+                unsigned int diff = 0;
+                this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
+
+                if (diff <= lossyDiff) { // Todo: Allowed loss should be lower here
+                    // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
+                    repId = idB;
+                    repIdNew = correspondences[idB];
+                    // Todo: Find best match instead of first
+                    break;
+                }
+            }
+            */
+
+            // When representative is not replaced, add it as a unique node
+            if (repIdNew == uniqueNodes.size()) {
+                uniqueNodes.push_back(_data[lev][repId]);
+                correspondences[repId] = repIdNew;
+            }
 
             // The correspondence of all nodes in this cluster is the representative node
             for (const id_t corId : clusters[c]) {

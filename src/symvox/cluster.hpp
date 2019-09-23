@@ -23,8 +23,14 @@ public:
         float weight;
     };
 
-    static inline std::vector<std::vector<unsigned int>> MCL(const std::vector<Edge> &edges) {
-        std::ofstream edgesFile("edges.txt", std::ios::out | std::ios::trunc);
+    static inline std::vector<std::vector<unsigned int>> MCL(const std::vector<Edge> &edges, int id = 0) {
+        std::vector<std::vector<unsigned int>> clusters;
+        if (edges.size() == 0) return clusters;
+
+        std::string fnIn = "edges" + std::to_string(id) + ".txt";
+        std::string fnOut = "clusters" + std::to_string(id) + ".txt";
+
+        std::ofstream edgesFile(fnIn, std::ios::out | std::ios::trunc);
 
         for (auto const& edge : edges) {
             edgesFile << std::to_string(edge.sourceId) << " "
@@ -33,15 +39,18 @@ public:
         }
         edgesFile.close();
 
-        int res = std::system("$HOME/local/bin/mcl edges.txt --abc -I 1.5 -o clusters.txt -te 4 -q x -V all");
+        std::string nT = std::to_string((int) omp_get_max_threads());
+        std::string cmd = "$HOME/local/bin/mcl " + fnIn + " --abc -I 2.0 -te " + nT + " -o " + fnOut; // -q x -V all
+//        std::string cmd = "export OMP_NUM_THREADS=" + nT + "; ../../hipmcl/bin/hipmcl -M " + fnIn + " -I 2.0 -per-process-mem 0.1 -o " + fnOut;
+
+        int res = std::system(cmd.c_str());
 
         if (res != 0) {
             printf("Could not perform MCL\n");
             exit(res);
         }
 
-        std::vector<std::vector<unsigned int>> clusters;
-        std::ifstream clusterFile("clusters.txt");
+        std::ifstream clusterFile(fnOut);
         std::string line;
         while(std::getline(clusterFile, line)) {
             std::stringstream linestream(line);
@@ -49,7 +58,10 @@ public:
 
             clusters.emplace_back(std::vector<unsigned int>());
 
-            while (std::getline(linestream, substr, '\t')) {
+            // mcl uses tab, hipmcl uses space
+            const char delim = '\t'; // ' '
+
+            while (std::getline(linestream, substr, delim)) {
                 clusters[clusters.size() - 1].emplace_back(std::stoul(substr));
             }
         }
@@ -57,8 +69,8 @@ public:
 
         // Todo: Remove files
 #if 0
-        std::remove("edges.txt");
-        std::remove("clusters.txt");
+        std::remove(fnIn);
+        std::remove(fnOut);
 #endif
 
         return clusters;
