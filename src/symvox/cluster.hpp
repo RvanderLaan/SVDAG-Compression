@@ -5,14 +5,9 @@
 #pragma once
 
 #include <vector>
-
-
-#include <Eigen/Core>
-#include <Eigen/Sparse>
 #include <fstream>
-
-typedef Eigen::SparseMatrix<double, Eigen::RowMajor> SpMat; // declares a column-major sparse matrix type of double
-typedef Eigen::Triplet<double> Triplet;
+#include <sstream>
+#include <omp.h>
 
 class cluster {
 
@@ -40,7 +35,7 @@ public:
         edgesFile.close();
 
         std::string nT = std::to_string((int) omp_get_max_threads());
-        std::string cmd = "$HOME/local/bin/mcl " + fnIn + " --abc -I 2.0 -te " + nT + " -o " + fnOut; // -q x -V all
+        std::string cmd = "$HOME/local/bin/mcl " + fnIn + " --abc -I 2.0 -scheme 1 -te " + nT + " -o " + fnOut; // -q x -V all
 //        std::string cmd = "export OMP_NUM_THREADS=" + nT + "; ../../hipmcl/bin/hipmcl -M " + fnIn + " -I 2.0 -per-process-mem 0.1 -o " + fnOut;
 
         int res = std::system(cmd.c_str());
@@ -74,54 +69,6 @@ public:
 #endif
 
         return clusters;
-    }
-
-    cluster(unsigned int nNodes) : mat(nNodes, nNodes) { }
-
-    inline std::vector<std::vector<unsigned int>> FindClusters(const std::vector<Edge> &edges, unsigned int nNodes) {
-
-        int nEdges = edges.size();
-
-        std::map<unsigned int, unsigned int> lookup; // map of node index to matrix index
-        std::vector<Triplet> triplets(nEdges);
-
-        unsigned int i = 0;
-        for (auto const& edge : edges) {
-            unsigned int matSourceId = lookup.size();
-            if (!lookup.insert(std::make_pair(edge.sourceId, matSourceId)).second) { // exists
-                matSourceId = lookup[edge.sourceId];
-            }
-            unsigned int matTargetId = lookup.size();
-            if (!lookup.insert(std::make_pair(edge.targetId, matTargetId)).second) { // exists
-                matSourceId = lookup[edge.targetId];
-            }
-            triplets.emplace_back(Triplet(matSourceId, matTargetId, edge.weight));
-        }
-        mat.setFromTriplets(triplets.begin(), triplets.end());
-
-    }
-
-private:
-    SpMat mat;
-
-    void normalize(SpMat& in) {
-        for (unsigned int i = 0; i < in.cols(); ++i) {
-            double sum = 0;
-            for (unsigned int j = 0; j < in.rows(); ++j) {
-                sum += in.coeff(i, j);
-            }
-            // Todo: Divide by sum
-        }
-    }
-
-    void expand() {
-
-    }
-
-    void inflate(SpMat& in, double inflation) {
-        auto lam = [inflation](double x) -> double { return std::pow(x, inflation); };
-        in = in.unaryExpr(lam);
-
     }
 };
 
