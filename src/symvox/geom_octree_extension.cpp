@@ -1390,7 +1390,7 @@ void GeomOctree::toLossyDag3() {
         // - We prefer to match nodes with a node that is referenced more than once
         // - Then, find which nodes are potential matches the most frequently
         printf("- Clustering... "); fflush(stdout);
-        const std::vector<std::vector<unsigned int>> clusters = cluster::MCL(edges, lev);
+        const std::vector<std::vector<unsigned int>> clusters = cluster::clusterSubgraphs(edges, lev);
         printf(" Done! \n"); fflush(stdout);
 
         //////// COMPARING CLUSTERS TO OTHER NODES ////////

@@ -28,6 +28,8 @@
 #include <symvox/encoded_ssvdag.hpp>
 #include <symvox/encoded_ussvdag.hpp>
 
+#include "../symvox/cluster.hpp"
+
 void printUsage() {
 	printf(
 		"\n"
@@ -50,6 +52,9 @@ void printUsage() {
 }
 
 int main(int argc, char ** argv) {
+
+	cluster::TestSubgraph2("edges11-orig.txt");
+	return 0;
 
 	printf(
 		"\n"
@@ -102,7 +107,9 @@ int main(int argc, char ** argv) {
 			lossy = true;
 		if (arg == "--lossy2" || arg == "-l2") {
 		    try {
-		        lossyTargetPct = std::stof(argv[i + 1]);
+				if (i + 1 < argc) {
+		        	lossyTargetPct = std::stof(argv[i + 1]);
+				}
 		        if (lossyTargetPct <= 0 || lossyTargetPct > 1) {
 		            printf("Lossy target percentage should be between 0 and 1\n"); exit(1);
 		        }
