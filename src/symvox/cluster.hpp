@@ -9,6 +9,7 @@
 #include <set>
 #include <stack>
 #include <algorithm>
+#include <math.h>
 #include <fstream>
 #include <sstream>
 #include <omp.h>
@@ -191,6 +192,18 @@ public:
                 }
             }
             std::vector<Edge> gVec(g.begin(), g.end());
+
+            // DEBUG: Check for duplicates in other graphs
+            unsigned int num_dupes = 0;
+            for (const auto &og : subGraphs) {
+                for (const auto &oe : og) {
+                    if (g.find(oe) != g.end()) {
+                        num_dupes++;
+                    }
+                }
+            }
+            printf("FOUND DUPES: %u\n", num_dupes);
+
             subGraphs.emplace_back(gVec);
         }
 
@@ -254,6 +267,26 @@ public:
 
         const auto subGraphs = findSubGraphs(edges);
         printf("Found %zu subgraphs from %zu edges\n", subGraphs.size(), edges.size());
+
+        unsigned int numEdgesInSubgraphs = 0;
+        std::vector<unsigned int> bins(16);
+        unsigned int maxBin = 10;
+        for (const auto &g : subGraphs) {
+            numEdgesInSubgraphs += g.size();
+
+            bins[std::min(g.size() / maxBin, bins.size() - 1)] += 1;
+        }
+        printf("Total of %u edges in all subgraphs\n", numEdgesInSubgraphs);
+        printf("Subgraph sizes for %s \n", edgeFn.c_str());
+
+        for (int i = 0; i < bins.size(); i++) {
+            printf("%i, ", i + 1);
+        }
+        printf("\n");
+        for (int i = 0; i < bins.size(); i++) {
+            printf("%u, ", bins[i]);
+        }
+        printf("\n");
      }
 };
 

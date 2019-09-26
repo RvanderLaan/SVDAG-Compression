@@ -1,12 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-filepath = '/home/remi/Documents/Projects/SymVox/bin/edges11.txt'
+filepath = '/home/remi/Documents/Projects/SymVox/bin/edges11-orig.txt'
 
 num_edges = 0
 
 edges = {}
 nodes_with_single_edge = {}
+
+
+def make_edge(n1, n2):
+  if n1 > n2:
+    return (n1, n2)
+  return (n2, n1)
 
 
 with open(filepath) as f:
@@ -19,6 +25,11 @@ with open(filepath) as f:
       edges[n1] = [n2]
     else:
       edges[n1].append(n2)
+
+    if n2 not in edges:
+      edges[n2] = [n1]
+    else:
+      edges[n2].append(n1)
     
     if p1 is not None and p1 is not n1:
       nodes_with_single_edge[n1] = n2
@@ -47,7 +58,6 @@ for n in edges:
     if num_triplet_edges is 3:
       num_node_triplets += 1
 
-
 subgraph_sizes = []
 num_subgraphs = 0
 while len(edges) > 0:
@@ -55,21 +65,21 @@ while len(edges) > 0:
   queue = edges.pop(n)
   num_subgraphs += 1
 
-  subgraph_nodes = {n}
-  subgraph_nodes.update(queue)
+  subgraph_edges = set([make_edge(n, n2) for n2 in queue])
 
   while len(queue) > 0:
     n2 = queue.pop()
     if n2 in edges:
-      subgraph_nodes.update(edges[n2])
+      subgraph_edges.update([make_edge(n2, n3) for n3 in edges[n2]])
       queue.extend(edges.pop(n2))
-  subgraph_sizes.append(len(subgraph_nodes))
-
+  subgraph_sizes.append(len(subgraph_edges))
 
 print('Nodes: {} edges: {} nodes w/ single edge: {} pairs: {} triplets: {}'.format(len(edges), num_edges, len(nodes_with_single_edge), num_node_pairs, num_node_triplets))
-print('Subgraphs: {}'.format(num_subgraphs))
+print('Subgraphs: {} or {}'.format(num_subgraphs, len(subgraph_sizes)))
 
 print("Smallest subgraph: {} \t Largest subgraph: {}".format(min(subgraph_sizes), max(subgraph_sizes)))
+
+print("Orig num edges: {}   Edges in subgraphs: {}".format(num_edges, np.sum(np.array(subgraph_sizes))))
 
 hist, bins = np.histogram(subgraph_sizes, bins=32)
 
