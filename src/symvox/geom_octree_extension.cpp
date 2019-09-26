@@ -381,7 +381,7 @@ std::vector<std::vector<unsigned int>> GeomOctree::sortByRefCount() {
 
             // sort by number of references (c++11's lambdas r00lez) ;D
             std::sort(hist.begin(), hist.end(),
-                      [](std::pair< GeomOctree::id_t, GeomOctree::id_t > a, std::pair< GeomOctree::id_t, GeomOctree::id_t> b) { return a.second > b.second; }
+                      [](std::pair< id_t, id_t > a, std::pair< id_t, id_t> b) { return a.second > b.second; }
             );
         }
 
@@ -1391,7 +1391,7 @@ void GeomOctree::toLossyDag3() {
         // - Then, find which nodes are potential matches the most frequently
         printf("- Clustering... "); fflush(stdout);
         const std::vector<std::vector<unsigned int>> clusters = cluster::MCL(edges, lev);
-        printf(" Done! "); fflush(stdout);
+        printf(" Done! \n"); fflush(stdout);
 
         //////// COMPARING CLUSTERS TO OTHER NODES ////////
         for (id_t idA = 0; idA < _data[lev].size(); ++idA) {
@@ -1404,6 +1404,7 @@ void GeomOctree::toLossyDag3() {
         // Replacing nodes from clusters
         for (unsigned int c = 0; c < clusters.size(); ++c) {
             // Todo: Closest node to center might not be the first node, should double check
+            // Todo: In which case, sort edges by sum of edge weights
             id_t repId = clusters[c][0]; // Representative node
             id_t repIdNew = uniqueNodes.size();
             /*
