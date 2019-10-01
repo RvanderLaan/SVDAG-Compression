@@ -57,6 +57,8 @@ uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int 
 
             if (node.existsChildPointer(c)) {
                 childHash = hash64(computeNodeHash(child, depth - 1));
+                // TODO: reuse previous hash
+//                childHash = matchMaps[lev][node.children[c]];
             }
 
             // bit shift so that identical child hashes don't cancel each other out
@@ -194,6 +196,9 @@ bool GeomOctree::compareSubtrees(
         // If nA is a leaf node, simply compare their child masks, since it doesn't matter what happens further down in B
         return nA.childrenBitmask == nB.childrenBitmask;
     }
+
+    // Todo: Could maybe abort early on by looking up previously computed similar nodes to the child nodes of nA
+    // If the the child of nB is not in that set of similar nodes to the child of nA, nA is not similar either (?)
 
     unsigned int childLevA = levA + 1;
     unsigned int childLevB = levB + 1;
@@ -1279,8 +1284,6 @@ void GeomOctree::toLossyDag3() {
 
     unsigned int nMatchesTotal = 0;
 
-    printf("Comparing nodes before clustering... "); fflush(stdout);
-
     // For every level, starting at two levels above the leaves...
     for (unsigned int lev = _levels - 2; lev > 0; --lev) {
 		_clock.restart();
@@ -1310,6 +1313,7 @@ void GeomOctree::toLossyDag3() {
 
         //////// FINDING EDGES FOR CLUSTERING ////////
         // For all nodes in this level, in reverse order (starting with least referenced)
+        printf("\n\tFinding similar nodes... "); fflush(stdout);
         for (id_t idA = _data[lev].size(); idA --> 0 ;) {
 			if ((idA % stepLogger == 0)) {
 				printf("%.0f%%..", round(100.f * (idA / (float)_data[lev].size())));
@@ -1342,10 +1346,8 @@ void GeomOctree::toLossyDag3() {
                             if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
                             if (refCounts[lev][idB] != 1) continue; // Only compare to other 1 ref nodes
 
-
-                            // Todo: Also check if idB has been compared with idA before. Double the work
                             // To avoid two identical edges, only add edges from low id to high id
-
+                            // (No need to compare idB to idA and adding another edge, as it would be the same edge)
                             edges.emplace_back(cluster::Edge{ idA, idB, 1});
                             uniqueNodesChecker[idA] = false;
                             uniqueNodesChecker[idB] = false;
@@ -1359,13 +1361,14 @@ void GeomOctree::toLossyDag3() {
                         if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
                         if (refCounts[lev][idB] != 1) continue; // Only compare to other 1 ref nodes
 
-                        // Check how similar this node actually is
+                        // Check how similar this node actually is: Deep comparison (expensive!!)
                         const Node &nB = _data[lev][idB];
                         unsigned int diff = 0;
                         this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
 
                         if (diff <= lossyDiff) {
                             // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
+                            // Todo: Difference is currently linearly converted to similarity. Could also try 1 / diff
                             float sim = 1.0f - ((float) diff / ((float) lossyDiff + 1.0f));
                             edges.emplace_back(cluster::Edge{ idA, idB, sim});
                             uniqueNodesChecker[idA] = false;
@@ -1375,21 +1378,12 @@ void GeomOctree::toLossyDag3() {
                 }
             }
         }
-        
-        // Todo: Filter out pairs of nodes that only have 1 edge between each other
-        // Can make use of the fact that lowId always points to highId
-        // For every edge
-        // - Check whether the next edge originates from the same node
-        // - Check the amount of edges that the targetId has
-        // - Remove edge if this node has one edge and target node has no edges specified
-        // - Pick one of the two nodes as represenattive
-        
 
         // Clustering stage:
         // - Any node might have one or more potential matches, however, we can only pick one
         // - We prefer to match nodes with a node that is referenced more than once
         // - Then, find which nodes are potential matches the most frequently
-        printf("- Clustering... "); fflush(stdout);
+        printf("\n\tClustering... "); fflush(stdout);
         const std::vector<std::vector<unsigned int>> clusters = cluster::clusterSubgraphs(edges, lev);
         printf(" Done! \n"); fflush(stdout);
 
@@ -1403,9 +1397,8 @@ void GeomOctree::toLossyDag3() {
 
         // Replacing nodes from clusters
         for (unsigned int c = 0; c < clusters.size(); ++c) {
-            // Todo: Closest node to center might not be the first node, should double check
-            // Todo: In which case, sort edges by sum of edge weights
-            id_t repId = clusters[c][0]; // Representative node
+            // Representative node is put at index 0
+            id_t repId = clusters[c][0];
             id_t repIdNew = uniqueNodes.size();
             /*
             const Node &n = _data[lev][repId];
@@ -1446,7 +1439,7 @@ void GeomOctree::toLossyDag3() {
         }
 
         /////////////////////////////////
-        // Replace previous level data
+        //// Replace previous level data
         _data[lev].clear();
         _data[lev].shrink_to_fit();
         uniqueNodes.shrink_to_fit();
@@ -1455,7 +1448,7 @@ void GeomOctree::toLossyDag3() {
         _nNodes += _data[lev].size();
 
         /////////////////////////////////
-        // Update all pointers in the level above
+        //// Update all pointers in the level above
         for (id_t i = 0; i < _data[lev-1].size(); i++) {
             Node * bn = &_data[lev-1][i];
             // For all children...
@@ -2246,6 +2239,7 @@ void GeomOctree::toHiddenGeometryDAG() {
 //                printf("Node %i has hash %u", i, hidChildHashes[i][lev][0])
 //            }
 
+            // Todo: Should apply clustering here, or at least find the best candidate
             // If this node is already used as a unique node, skip it
             if (std::find(correspondences.begin(), correspondences.end(), i) != correspondences.end()) {
                 continue;
@@ -2326,7 +2320,8 @@ void GeomOctree::toHiddenGeometryDAG() {
      * For what is left over:
      *   - If it completely inside, remove all children
      *
-     * Todo: Does it matter
+     * Should be down top-down:
+     * * 
      */
 
 

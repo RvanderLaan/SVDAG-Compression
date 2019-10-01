@@ -35,7 +35,7 @@ public:
     static inline std::vector<std::vector<unsigned int>> clusterSubgraphs(
             const std::vector<Edge> &edges, int id = 0) {
         const auto subGraphs = findSubGraphs(edges);
-        printf("Found %zu subgraphs of %zu edges\n", subGraphs.size(), edges.size());
+        printf("Found %zu subgraphs of %zu edges. ", subGraphs.size(), edges.size());
         std::vector<std::vector<unsigned int>> clusters;
 
         // Threshold of cluster size for when to run MCL or when to just create a cluster of the whole subgraph
@@ -51,40 +51,85 @@ public:
                 }
                 std::vector<unsigned int> clusterVec(clusterSet.begin(), clusterSet.end());
 
-                // Find cluster representative, with highest total edge weight
-                std::map<unsigned int, float> summedEdgeWeights;
-                for (const auto &e : subGraph) {
-                    if (summedEdgeWeights.count(e.sourceId) == 0) {
-                        summedEdgeWeights[e.sourceId] = e.weight;
-                    } else {
-                        summedEdgeWeights[e.sourceId] += e.weight;
-                    }
-                    if (summedEdgeWeights.count(e.targetId) == 0) {
-                        summedEdgeWeights[e.targetId] = e.weight;
-                    } else {
-                        summedEdgeWeights[e.targetId] += e.weight;
-                    }
-                }
-
-                // Swap two elements so that node with highest weight is at the index 0
-                auto max = std::max_element(summedEdgeWeights.begin(), summedEdgeWeights.end());
-                auto maxIt = std::find(clusterVec.begin(), clusterVec.end(), max->first);
-                unsigned int maxIndex = std::distance(clusterVec.begin(), maxIt);
-                unsigned int tmp = clusterVec[0];
-                clusterVec[0] = max->first;
-                clusterVec[maxIndex] = tmp;
+                // Set cluster center at index 0
+                setClusterCenterToBeginning(subGraph, clusterVec);
 
                 clusters.emplace_back(clusterVec);
             } else {
                 // Else, perform MCL
                 auto subClusters = MCL(subGraph, id);
-                clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
 
-                // Todo: Set cluster representative at index 0
+
+                // Set cluster center at index 0 for all subgraphs
+                for (auto &cluster : subClusters) {
+                    // Find only those edges that are in this specific subCluster
+                    std::vector<Edge> clusterEdges;
+                    for (const auto &e : subGraph) {
+                        if (std::find(cluster.begin(), cluster.end(), e.sourceId) != cluster.end()
+                         && std::find(cluster.begin(), cluster.end(), e.targetId) != cluster.end()) {
+                            clusterEdges.emplace_back(e);
+                        }
+                    }
+                    setClusterCenterToBeginning(clusterEdges, cluster);
+                }
+
+                clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
             }
         }
-        printf("Total of %zu clusters\n", clusters.size());
+        printf("Total of %zu clusters. ", clusters.size());
         return clusters;
+    }
+
+    /**
+     * Finds the node with the highest sum of edge weights and puts it at index 0 of the cluster
+     * @param edges
+     * @param cluster
+     */
+    static void setClusterCenterToBeginning(
+            const std::vector<Edge> &edges,
+            std::vector<unsigned int> &cluster
+    ) {
+        if (cluster.size() == 1) return;
+        // Find cluster representative, with highest total edge weight
+        std::map<unsigned int, float> summedEdgeWeights;
+        for (const auto &e : edges) {
+            if (summedEdgeWeights.count(e.sourceId) == 0) {
+                summedEdgeWeights[e.sourceId] = e.weight;
+            } else {
+                summedEdgeWeights[e.sourceId] += e.weight;
+            }
+            if (summedEdgeWeights.count(e.targetId) == 0) {
+                summedEdgeWeights[e.targetId] = e.weight;
+            } else {
+                summedEdgeWeights[e.targetId] += e.weight;
+            }
+        }
+
+        // Swap two elements so that node with highest weight is at the index 0
+        auto max = std::max_element(summedEdgeWeights.begin(), summedEdgeWeights.end(),
+                [](const auto& a, const auto& b)->bool{ return a.second < b.second; });
+        auto maxIt = std::find(cluster.begin(), cluster.end(), max->first);
+
+#if 1
+        if (maxIt == cluster.end()) {
+            printf("Cluster: ");
+            for (auto i = cluster.begin(); i != cluster.end(); ++i)
+                printf("%u ", *i);
+            printf("\nEdges: ");
+            for (auto i = edges.begin(); i != edges.end(); ++i)
+                printf("%u->%u ", i->sourceId, i->targetId);
+            printf("\n");
+
+            printf("Cluster size: %zu, num edges: %zu\n", cluster.size(), edges.size());
+            printf("Max node not in cluster?! %u, %f\n", max->first, max->second);
+            exit(-1);
+        }
+#endif
+
+        unsigned int maxIndex = std::distance(cluster.begin(), maxIt);
+        unsigned int tmp = cluster[0];
+        cluster[0] = max->first;
+        cluster[maxIndex] = tmp;
     }
 
     static inline std::vector<std::vector<unsigned int>> MCL(
@@ -193,7 +238,9 @@ public:
             }
             std::vector<Edge> gVec(g.begin(), g.end());
 
-            // DEBUG: Check for duplicates in other graphs
+            // TODO: DEBUG: Check for duplicates in other graphs
+#if 0
+            printf("DEBUG: Check for duplicates in other graphs\n");
             unsigned int num_dupes = 0;
             for (const auto &og : subGraphs) {
                 for (const auto &oe : og) {
@@ -203,6 +250,7 @@ public:
                 }
             }
             printf("FOUND DUPES: %u\n", num_dupes);
+#endif
 
             subGraphs.emplace_back(gVec);
         }
