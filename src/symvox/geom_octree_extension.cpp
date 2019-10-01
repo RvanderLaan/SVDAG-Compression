@@ -1313,13 +1313,18 @@ void GeomOctree::toLossyDag3() {
 
         //////// FINDING EDGES FOR CLUSTERING ////////
         // For all nodes in this level, in reverse order (starting with least referenced)
-        printf("\n\tFinding similar nodes... "); fflush(stdout);
-        for (id_t idA = _data[lev].size(); idA --> 0 ;) {
+        printf("\n\tFinding similar nodes [%i threads]... ", (int)omp_get_max_threads()); fflush(stdout);
+
+        // Todo: Try out #pragma omp declare reduction (merge : std::vector<int> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
+#pragma omp parallel for schedule(dynamic,2)
+        for (int idA = (int) _data[lev].size() - 1; idA >= 0; --idA) {
+
 			if ((idA % stepLogger == 0)) {
-				printf("%.0f%%..", round(100.f * (idA / (float)_data[lev].size())));
+				printf("%.0f%%..", round(100.f * ((float) idA / (float)_data[lev].size())));
 				fflush(stdout);
 			}
-            if (refCounts[lev][idA] > 1) break; // only cluster nodes with 1 ref
+            // only cluster nodes with 1 ref
+            if (refCounts[lev][idA] > 1) continue; // should break but not sure if that affects omp stuff
 
             const Node &n = _data[lev][idA];
             // Todo: Should use pre-computed hash to avoid cascade of lossy error
@@ -1348,9 +1353,12 @@ void GeomOctree::toLossyDag3() {
 
                             // To avoid two identical edges, only add edges from low id to high id
                             // (No need to compare idB to idA and adding another edge, as it would be the same edge)
-                            edges.emplace_back(cluster::Edge{ idA, idB, 1});
-                            uniqueNodesChecker[idA] = false;
-                            uniqueNodesChecker[idB] = false;
+#pragma omp critical
+                            {
+                                edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, 1});
+                                uniqueNodesChecker[idA] = false;
+                                uniqueNodesChecker[idB] = false;
+                            };
                         }
                     }
                 } else {
@@ -1361,16 +1369,17 @@ void GeomOctree::toLossyDag3() {
                         if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
                         if (refCounts[lev][idB] != 1) continue; // Only compare to other 1 ref nodes
 
-                        // Check how similar this node actually is: Deep comparison (expensive!!)
+                        // Todo: Check how similar this node actually is: Deep comparison (expensive!!)
                         const Node &nB = _data[lev][idB];
                         unsigned int diff = 0;
                         this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
 
+#pragma omp critical
                         if (diff <= lossyDiff) {
                             // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
                             // Todo: Difference is currently linearly converted to similarity. Could also try 1 / diff
                             float sim = 1.0f - ((float) diff / ((float) lossyDiff + 1.0f));
-                            edges.emplace_back(cluster::Edge{ idA, idB, sim});
+                            edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, sim});
                             uniqueNodesChecker[idA] = false;
                             uniqueNodesChecker[idB] = false;
                         }
@@ -2321,7 +2330,7 @@ void GeomOctree::toHiddenGeometryDAG() {
      *   - If it completely inside, remove all children
      *
      * Should be down top-down:
-     * * 
+     * *
      */
 
 

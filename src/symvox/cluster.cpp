@@ -3,5 +3,3 @@
 //
 
 #include "cluster.hpp"
-
-

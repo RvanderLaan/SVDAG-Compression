@@ -53,8 +53,8 @@ void printUsage() {
 
 int main(int argc, char ** argv) {
 
-	cluster::TestSubgraph2("edges11-orig.txt");
-	return 0;
+//	cluster::TestSubgraph2("edges11-orig.txt");
+//	return 0;
 
 	printf(
 		"\n"

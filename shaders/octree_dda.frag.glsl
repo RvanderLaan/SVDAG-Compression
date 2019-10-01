@@ -743,7 +743,7 @@ void main() {
 			}
 		}
 	
-		color = vec3(t, t, 1.0f);
+		color = vec3(t);
 //		color = TurboColormap(t);
 //		color = hitNorm * 0.5 + vec3(0.5);
 
