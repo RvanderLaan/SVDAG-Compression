@@ -145,7 +145,7 @@ int main(int argc, char ** argv) {
         }
         svo.encode(octree);
         if (lossy) {
-            octree.toLossyDAG();
+//            octree.toLossyDAG();
         } else if (exploitHiddenGeom) {
             octree.hiddenGeometryFloodfill();
 //            octree.toHiddenGeometryDAG();

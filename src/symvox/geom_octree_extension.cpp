@@ -206,11 +206,6 @@ bool GeomOctree::compareSubtrees(
     // Else, compare individual children: For every child
     for (int i = 0; i < 8; ++i) {
 
-        // Todo: try out lossy compression
-        // If A doesn't have a child, and B does, try to merge anyways
-//        if (!)
-
-
         // If the child bits don't match, they are not equal
         if (nA.existsChild(i) != nB.existsChild(i)) {
             return false;
@@ -219,9 +214,6 @@ bool GeomOctree::compareSubtrees(
         // If there is no child node, they can be seen as equal since there is no subtree below this node
         // Note: This only holds for the leaf level.
 
-//		else if (!nA.existsChild(i) && nB.existsChild(i)) {
-//			return false; // allowing this could potentially create holes in geometry
-//		}
         else if (!nA.existsChild(i) && !nB.existsChild(i)) {
             continue; // if they both have no children, continue looking through other children
         }
@@ -648,545 +640,56 @@ unsigned int GeomOctree::findAllSymDuplicateSubtrees() {
 ////////////////////////////////////////////////////////////////////
 
 /**
- * @brief GeomOctree::toDAG Reduces a SVO to a lossy DAG
- * @param iternalCall Whether the function is called internally (only adds extra print)
+ * ToLossyDag1 idea:
+ * - Merge nodes that are similar (e.g. only have 1 child difference)
+ * - Most effective to perform on most common nodes
+ *
+ * Other implementation ideas
+ * - Represent every child bit as a float, how close it is to the true geometry
+ *
+ * Proof of concept, greedy: Merge the largest sets of nodes that have diff 1
+ * - Just per level for now, not earlier levels
+ *
+ * Looking at #nodes compressed per level w/ lossless compression, lossy compression should be avoided on:
+ * - the leaves, there are very little benefits with large visual side effects
+ * - the first half of levels, since this will have the largest side effects
+ * -> therefore, focus on the deepest levels above the leaves
  */
-void GeomOctree::toLossyDAG(bool iternalCall) {
+/**
+ * What needs to happen
+ * - Convert to DAG as usual
+ *   - This gives us a list of correspondences, which points to the new index in uniqueNodes given an index of _data[lev]
+ * - Sort uniqueNodes by ref count
+ * - Create new list of lossyUniqueNodes, of nodes that have correspondence to itself
+ * - Find matches with a low diff (loop over every node for every node (N^2)
+ *   - Replace list of correspondences, which points to nodes in lossyUniqueNodes given an index in _data[lev]
+ * - Update pointers in level above
+ */
 
-    if (_state == S_SVO) {
-        if (!iternalCall) printf("* Transforming SVO -> Lossy DAG ... "); fflush(stdout);
-    } else {
-        printf("ERROR! This is not a SVO!\n");
-        return;
-    }
-
-    /**
-     * Main idea:
-     * - Merge nodes that are similar (e.g. only have 1 child difference)
-     * - Most effective to perform on most common nodes
-     *
-     * Other implementation ideas
-     * - Represent every child bit as a float, how close it is to the true geometry
-     *
-     * Proof of concept, greedy: Merge the largest sets of nodes that have diff 1
-     * - Just per level for now, not earlier levels
-     *
-     * Looking at #nodes compressed per level w/ lossless compression, lossy compression should be avoided on:
-     * - the leaves, there are very little benefits with large visual side effects
-     * - the first half of levels, since this will have the largest side effects
-     * -> therefore, focus on the deepest levels above the leaves
-     */
-    /**
-     * What needs to happen
-     * - Convert to DAG as usual
-     *   - This gives us a list of correspondences, which points to the new index in uniqueNodes given an index of _data[lev]
-     * - Sort uniqueNodes by ref count
-     * - Create new list of lossyUniqueNodes, of nodes that have correspondence to itself
-     * - Find matches with a low diff
-     *   - Replace list of correspondences, which points to nodes in lossyUniqueNodes given an index in _data[lev]
-     * - Update pointers in level above
-     */
-
-    _nNodes = 1;
-    /** Vector of duplicate nodes. Every index denotes the first duplicate of the node at that index in per level. */
-    std::vector<id_t> correspondences;
-    std::map<Node, id_t> uniqueNodesChecker;
-    std::vector<Node> uniqueNodes;
-    std::vector<sl::uint32_t> uniqueRefCount; // count for each uniqueNode how many refs it has
-
-    std::vector<id_t> lossyCorrespondences; // every index indicates a node in uniqueNodes with its value as the index in lossyUniqueNodes
-    std::vector<Node> lossyUniqueNodes;
-
-    sl::time_point ts = _clock.now();
-
-    printf("\n");
-
-    // For every level, starting at the leaves...
-    for (unsigned int lev = _levels - 1; lev > 0; --lev) {
-        // Clear the lists used to keep track of correspondeces etc
-        size_t oldLevSize = _data[lev].size();
-        uniqueNodes.clear();
-        uniqueNodes.shrink_to_fit();
-        uniqueNodesChecker.clear();
-        correspondences.clear();
-        correspondences.resize(oldLevSize);
-
-        uniqueRefCount.clear();
-        uniqueRefCount.shrink_to_fit();
-        lossyUniqueNodes.clear();
-        lossyUniqueNodes.shrink_to_fit();
-
-        // Convert to DAG as usual
-        // For all nodes in this level...
-        for (id_t i = 0; i < _data[lev].size(); i++) {
-            Node n = _data[lev][i];
-            if (!n.hasChildren()) continue; // skip empty nodes
-            auto k = uniqueNodesChecker.find(n); // find if duplicate
-
-            if (k != uniqueNodesChecker.end()) { // found
-                correspondences[i] = (*k).second; // store duplicate node
-                uniqueRefCount[(*k).second] += 1;
-            }
-            else { // !found
-                uniqueNodesChecker[n] = (id_t)uniqueNodes.size(); // store it as unique node
-                correspondences[i] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
-                uniqueNodes.push_back(n);
-                uniqueRefCount.push_back(1);
-            }
-        }
-
-        uniqueNodes.shrink_to_fit();
-        printf("Reduced level %u \tfrom %lu  \tto %lu nodes ", lev, _data[lev].size(), uniqueNodes.size());
-
-        // Clear original SVO nodes
-        _data[lev].clear();
-        _data[lev].shrink_to_fit();
-
-        // ===== LOSSY COMPRESSION =====
-        bool doLossy = lev != _levels - 1 && lev >= (_levels / 2); // only lossy on deepest 1/2 levels, except leaves
-
-        lossyCorrespondences.clear();
-        lossyCorrespondences.resize(uniqueNodes.size());
-
-        if (doLossy) {
-            // === Sort unique nodes on #references ===
-            // https://stackoverflow.com/questions/26569801/sort-one-array-based-on-values-of-another-array
-            std::vector<unsigned int> origOrderIndices(uniqueNodes.size());
-            for (int i = 0; i < uniqueNodes.size(); ++i){
-                origOrderIndices[i] = i;
-            }
-            std::sort(
-                    origOrderIndices.begin(),
-                    origOrderIndices.end(),
-                    [&uniqueRefCount](unsigned int a, unsigned int b) { return uniqueRefCount[a] > uniqueRefCount[b]; });
-
-            // Now we have a list of indices, with those nodes with the most references at the start
-
-            // === Check diff between each, merge those with diff 1 ===
-            // Keep track of nodes that are merged
-            std::map<id_t, id_t> lossyMatches;
-
-            // Compare nodes with a low amount of references to all other nodes
-            for (int i = 0; i < uniqueNodes.size(); ++i) { // nodes to potentially remove
-                id_t orderedIndex = origOrderIndices[i]; // index in uniqueNodes
-                if (i < uniqueNodes.size() / 2) { // skip nodes with many refs. Act like they are unique
-                    lossyCorrespondences[orderedIndex] = lossyUniqueNodes.size();
-                    lossyUniqueNodes.push_back(uniqueNodes[orderedIndex]);
-                    continue;
-                }
-
-                // If this node is already a match to another node, we can't remove it: skip
-                if (lossyMatches.find(orderedIndex) != lossyMatches.end()) {
-                    // If not added yet, add it as unique node
-                    if (std::find(lossyUniqueNodes.begin(), lossyUniqueNodes.end(), uniqueNodes[orderedIndex]) == lossyUniqueNodes.end()) {
-                        lossyCorrespondences[orderedIndex] = lossyUniqueNodes.size();
-                        lossyUniqueNodes.push_back(uniqueNodes[orderedIndex]);
-                    }
-                    continue;
-                }
-
-                bool foundMatch = false;
-                for (auto const& matchIndex : origOrderIndices) { // nodes to compare to, starting with node index with most refs
-                    // If comparing to itself, skip
-                    if (orderedIndex == matchIndex) continue;
-                    int diff = 0;
-                    for (int c = 0; c < 8; ++c) {
-                        if (lev == _levels - 1) {
-                            // For leaves, compare bitmask
-                            if (uniqueNodes[orderedIndex].existsChild(c) != uniqueNodes[matchIndex].existsChild(c)) {
-                                diff++;
-                            }
-                        }
-                        else {
-                            // For inner nodes, compare child pointers
-                            if (uniqueNodes[orderedIndex].children[c] != uniqueNodes[matchIndex].children[c]) {
-                                diff++;
-                            }
-                        }
-                    }
-                    // If diff is <= 1, merge!
-                    if (diff <= 1) {
-                        // since the match might not be in lossyUniqueNodes yet, don't set the corr now, but afterwards
-                        lossyMatches.insert(std::make_pair(orderedIndex, matchIndex)); // mark node j as a match to node i
-                        foundMatch = true;
-                        break;
-                    }
-                }
-                if (!foundMatch) { // no match, so it's unique
-                    lossyCorrespondences[orderedIndex] = lossyUniqueNodes.size();
-                    lossyUniqueNodes.push_back(uniqueNodes[orderedIndex]);
-                }
-            }
-
-            // Now set the correspondences for the duplicate nodes
-            for (auto const& nodeMatch : lossyMatches) {
-                // The node at this original index points to an index in lossyUniqueNodes
-                id_t origDupIndex = nodeMatch.first;
-                id_t matchIndexInLossyUniqueNodes = std::distance(
-                        lossyUniqueNodes.begin(),
-                        std::find(
-                                lossyUniqueNodes.begin(),
-                                lossyUniqueNodes.end(),
-                                uniqueNodes[nodeMatch.second]
-                        ));
-                lossyCorrespondences[origDupIndex] = matchIndexInLossyUniqueNodes;
-            }
-
-            lossyUniqueNodes.shrink_to_fit();
-            printf("\t-> Lossy %lu \t(%.2f%%)\n", lossyUniqueNodes.size(), 100.0 - (lossyUniqueNodes.size() / float(uniqueNodes.size())) * 100.0);
-            _data[lev] = lossyUniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
-        } else {
-            _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
-            printf("\t-> No lossy compression\n");
-        }
-
-        _data[lev].shrink_to_fit();
-        _nNodes += _data[lev].size();
-
-        // Update all pointers in the level above
-        for (id_t i = 0; i < _data[lev-1].size(); i++) {
-            Node * bn = &_data[lev-1][i];
-            // For all children...
-            for (int j = 0; j < 8; j++) {
-                // If this child exists...
-                if (bn->existsChild(j)) {
-                    // Set the child pointer to the unique node that replaced this child
-                    if (doLossy) {
-                        bn->children[j] = lossyCorrespondences[correspondences[bn->children[j]]];
-                    }
-                    else {
-                        bn->children[j] = correspondences[bn->children[j]];
-                    }
-                }
-            }
-        }
-    }
-
-    _stats.toDAGTime = _clock.now() - ts;
-
-    _state = S_DAG;
-    _stats.nNodesDAG = _nNodes;
-
-    if (!iternalCall) printf("OK! [%s]\n", sl::human_readable_duration(_stats.toDAGTime).c_str());
-}
 
 /**
+ * ToLossyDag2 Idea;
+ * - Given a target percentage, like jpeg compression, merge as many closest matches until that target is reached
+ * - Similar matches are found by comparing subtrees up to one or more levels before their maximum depth,
+ *   and then the best match is found by performing deep comparisons
+ * - Most effective on least common nodes, so it will act like outlier elimination
+ *   Also had the idea of noisiness detection, but that's likely correlated with being rarely referenced, so not needed for now
  *
- * @param qualityPct Try to merge x% of the outliers with more commonly used nodes
+ * - The algorithm should probably start at the top of the graph, else it could cause a cascade of lossy errors
+ *
+ * - The target could be relative to the amount of nodes that is merged
+ * - Start at the top of the graph, going down, merge all subtrees with diff 1. Then repeat for diff 2, 3, etc. until target is reached
+ * - This means that up until diff 8, only one level should be ignored in finding match candidates
+ *   Maybe also take into account whether all those diffs occur in the same node, or all in different ones?
+ *
+ * Other option
+ *  -
+ *
+ * Other ideas:
+ * - Generating new in-between node for two or more outliers, as a more accurate lossy representative
+ *
  */
-void GeomOctree::toLossyDAG2(float qualityPct) {
-    /**
-     * New Idea;
-     * - Given a target percentage, like jpeg compression, merge as many closest matches until that target is reached
-     * - Similar matches are found by comparing subtrees up to one or more levels before their maximum depth,
-     *   and then the best match is found by performing deep comparisons
-     * - Most effective on least common nodes, so it will act like outlier elimination
-     *   Also had the idea of noisiness detection, but that's likely correlated with being rarely referenced, so not needed for now
-     *
-     * - The algorithm should probably start at the top of the graph, else it could cause a cascade of lossy errors
-     *
-     * - The target could be relative to the amount of nodes that is merged
-     * - Start at the top of the graph, going down, merge all subtrees with diff 1. Then repeat for diff 2, 3, etc. until target is reached
-     * - This means that up until diff 8, only one level should be ignored in finding match candidates
-     *   Maybe also take into account whether all those diffs occur in the same node, or all in different ones?
-     *
-     * Other option
-     *  -
-     *
-     * Other ideas:
-     * - Generating new in-between node for two or more outliers, as a more accurate lossy representative
-     *
-     */
-    if (_state == S_DAG) {
-        printf("* Transforming SVO -> Lossy DAGv2 ... \n");
-    } else {
-        printf("ERROR! This is not a DAG!\n");
-        return;
-    }
 
-    // Sort nodes based on #references: Highest reffed nodes at the start
-    std::vector<std::vector<unsigned int>> refCounts = this->sortByRefCount();
-
-#if 0
-    printf("DEBUG: Check how often nodes are referenced\n");
-
-    for (unsigned int lev = 1; lev < _levels; ++lev) {
-        printf("- LEVEL %u, total nodes: %zu\n", lev, _data[lev].size());
-        std::vector<unsigned int> hist(10);
-        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-            hist[std::min(refCounts[lev][nodeIndex], (unsigned int) (hist.size() - 1))] += 1;
-        }
-        for (unsigned int i = 1; i < hist.size(); ++i) {
-            printf("\t- %u refs: \t%u\t%.2f%%\n", i, hist[i], 100.0 * hist[i] / (float) _data[lev].size());
-        }
-    }
-#endif
-
-    size_t origNNodes = _nNodes;
-    _nNodes = 1;
-
-    int nMatches = 0;
-    unsigned targetMatches = origNNodes - origNNodes * qualityPct;
-
-//    unsigned int depthOffset = currentDiff / 8; // diff of greater than 8 requires more than 1 node
-    // (Re) initialize multi map of candidates
-    std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
-
-
-    // We need to store the correspondences of one subtree to another:
-    // Contains for each level, a map of node IDs that point to level and index of an identical subtree higher-up in the graph.
-    std::vector<std::map<id_t, std::pair<unsigned int, id_t>>> multiLevelCorrespondences(_levels); // store correspondences across different levels
-
-    // Todo: Find a way to loop only once instead of for every lossy diff
-    // E.g., allow 1 or 2 more diff for each level above the leaves
-    // Or maybe not: While faster to compute that would not output a result with a minimum amount of loss
-
-    // Continue lossy compression until the desired size percentage is reached
-    bool reachedTarget = false;
-    // First merge nodes with diff of 1, then more and more
-    for (unsigned int lossyDiff = 1; lossyDiff < 2; ++lossyDiff) { // Todo: How far are we going. Should maybe be relative to level?
-
-        unsigned int currentMatchDepth = _levels / 2;
-        buildMultiMap(currentMatchDepth, matchMaps);
-
-        printf("- Diff: %u (matches so far: %u) ", lossyDiff, nMatches);
-
-        // The higher of a diff we allow, the earlier we should stop in the graph (stop the loop over levels earlier)
-        // A high difference in a low level is worse than a high difference in a higher level
-        // Todo: At which level do we start? Lev 1 makes logical sense, levs/2 makes practical sense
-        for (unsigned int levA = _levels - 2; levA < _levels - 1; ++levA) {
-            printf(" - L%u.. ", levA); fflush(stdout);
-
-            // Build new match maps for the lowest levels with lower depths, when those nodes do not have subtrees of that depth
-            unsigned int maxMatchDepth = std::max(_levels - levA - 2, 1u); // e.g. 10 levels, at levA 5, would give depth of 3:
-            if (maxMatchDepth < currentMatchDepth) {
-                currentMatchDepth = maxMatchDepth;
-                buildMultiMap(currentMatchDepth, matchMaps, 0, _levels); // + 2 cuz last level has same depth, hacky solution
-            }
-
-            // For every node in level A, starting with least referenced one
-            for (id_t idA = _data[levA].size() - 1; idA > 0; --idA) {
-                if (refCounts[levA][idA] == 0) continue; // continue if this node was already merged
-                if (refCounts[levA][idA] > 1) break; // stop once nodes are referenced more than once
-
-                Node &nA = _data[levA][idA];
-                uint64_t nAKey = computeNodeHash(nA, currentMatchDepth);
-
-                // Find potential matches in the next level. No cross-level-merging for now
-                unsigned int levB = levA; // Todo: Also try cross-level-merging, over all previous levels instead of same one
-
-                // Todo: For level above leaves, compute hash that includes all leaves (bitmasks appended into 64 bits)
-                // Then look up candidates for all 64 instances where 1 of the bits is inverted
-                if (levA == _levels - 2) {
-                    for (int i = 0; i < 64; ++i) {
-                        uint64_t nAKeyMod = nAKey ^(1UL << i);
-                        auto candidates = matchMaps[levB].equal_range(nAKeyMod);
-                        for (auto it = candidates.first; it != candidates.second; ++it) {
-//                            printf("CANDIDATE ");
-                            // Todo: If there is a candidate, it must have 1 diff, no need to check... right?
-                            id_t idB = it->second;
-//                            if (idA <= idB) continue;
-                            if (refCounts[levB][idB] == 0) continue; // continue if this node was already merged
-//
-//                            const Node &nB = _data[levB][idB];
-//                            unsigned int diff = 0;
-//                            this->diffSubtrees(levA, levB, nA, nB, lossyDiff + 1, diff);
-//                            if (diff != 1) printf("DIFF NOT 1???\n");
-//                            if (diff <= lossyDiff) {
-                                // Found a match
-                                nMatches++;
-                                multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
-                                refCounts[levA][idA] = 0;
-//                                refCounts[levB][idB] += 1;
-                                i = 64;
-                                break;
-//                            }
-                        }
-                    }
-                } else {
-                    printf("SHOULDNT REACH THIS\n");
-                    auto candidates = matchMaps[levB].equal_range(nAKey);
-
-                    // Loop over candidates starting with most referenced one
-                    // Quick test shows that the result is in the same order they are inserted as, so should be most referenced first
-                    for (auto it = candidates.first; it != candidates.second; ++it) {
-                        id_t idB = it->second;
-                        if (idA <= idB) continue;
-
-                        // Todo: Why are there so many hash collisions at the level above the leaves?
-                        // Todo: Why are there holes/weird extensions in the output?
-
-                        const Node &nB = _data[levB][idB];
-
-                        unsigned int diff = 0;
-                        this->diffSubtrees(levA, levB, nA, nB, lossyDiff + 1, diff);
-                        if (diff <= lossyDiff) {
-                            // Found a match
-                            nMatches++;
-                            multiLevelCorrespondences[levA].insert(std::make_pair(idA, std::make_pair(levB, idB)));
-                            refCounts[levA][idA] = 0;
-                            break;
-                        }
-                    }
-                }
-                // Check if target is reached
-                if (nMatches >= targetMatches) {
-                    reachedTarget = true;
-                    printf("\nReached lossy compression target: %u lossy matches found from total of %zu nodes", nMatches, origNNodes);
-                    break;
-                }
-            }
-            if (reachedTarget) break;
-        }
-        printf("\n");
-        if (reachedTarget) break;
-    }
-
-    if (!reachedTarget) {
-        printf("Did not reach lossy compression target, %u lossy matches found from total of %zu nodes", nMatches, origNNodes);
-    }
-
-    // Decrement ref counts for nodes without references
-    // Todo: keep in mind this doesn't work for effective ref counts
-    // Todo: should rename "effective ref count" to "svo ref count" or something
-    int nIndirectRemovedNodes = 0;
-//    for (unsigned int lev = 1; lev < _levels; ++lev) {
-//        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-//            if (refCounts[lev][nodeIndex] == 0) {
-//                nIndirectRemovedNodes++;
-//                // Decrement ref counts for its children
-//                const auto &n = _data[lev][nodeIndex];
-//                for (int c = 0; c < 8; ++c) {
-//                    if (n.existsChildPointer(c)) {
-//                        refCounts[lev + 1][n.children[c]] -= 1;
-//                    }
-//                }
-//            }
-//        }
-//    }
-
-
-#if 0
-    printf("DEBUG: Check how often nodes are referenced\n");
-
-    for (unsigned int lev = 1; lev < _levels; ++lev) {
-        printf("- LEVEL %u, total nodes: %zu\n", lev, _data[lev].size());
-        std::vector<unsigned int> hist(10);
-        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-            hist[std::min(refCounts[lev][nodeIndex], (unsigned int) (hist.size() - 1))] += 1;
-        }
-        for (unsigned int i = 0; i < hist.size(); ++i) {
-            printf("\t- %u refs: \t%u\t%.2f%%\n", i, hist[i], 100.0 * hist[i] / (float) _data[lev].size());
-        }
-    }
-#endif
-
-    printf("\nMATCHES: %i, INDIRECTLY REMOVED NODES: %i\n", nMatches, nIndirectRemovedNodes - nMatches);
-
-    /*
-     * Todo: Fix idea
-     * Whenever a lossy match is found, store it for that node only, no matter how many times it is referenced, since we're starting with the least important nodes to remove
-     * For all of its direct children, decrement their ref count
-     * Then, afterwards, from top to bottom
-     * 1. Remove nodes that have been lossy removed
-     * 2. remove all nodes with ref count of 0, and update their child ref counts
-     *
-     * Update pointers (currently done top-to-bottom, so needs some adjustment)
-     */
-
-    ///////////////////////////////////
-    /// Removing identical subtrees ///
-    ///////////////////////////////////
-
-    // Now that all similar subtrees have been identified, the duplicate subtrees can be removed and the pointers to them should be updated.
-    for (unsigned int lev = _levels - 1; lev > 0; --lev) {
-        std::vector<Node> uniqueNodes;
-        uniqueNodes.reserve(_data[lev].size());
-
-        std::vector<id_t> correspondences(_data[lev].size(), (id_t) -1); // normal correspondences for this level (old index -> new index) for those that are not removed
-
-        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-//            if (refCounts[lev][nodeIndex] == 0) continue; // skip nodes without references
-            // NO: We need to update the pointers if they are not referenced anymore, else random stuff will happen!
-
-
-            // Only keep nodes in uniqueNodes that do not have a correspondence in a higher level
-            if (multiLevelCorrespondences[lev].count(nodeIndex) == 0) {
-                correspondences[nodeIndex] = uniqueNodes.size();
-                uniqueNodes.push_back(_data[lev][nodeIndex]);
-            } else {
-                auto it = multiLevelCorrespondences[lev].find(nodeIndex);
-                //auto[corLevel, corId] = it->second;
-                correspondences[nodeIndex] = it->second.second;
-            }
-        }
-
-        printf("- L%u: %zu -> %zu. \t", lev, _data[lev].size(), uniqueNodes.size());
-
-        // Replace node data for this level
-        _data[lev].clear();
-        _data[lev].shrink_to_fit();
-        _data[lev] = uniqueNodes;
-        _data[lev].shrink_to_fit();
-
-        _nNodes += _data[lev].size();
-
-        int numReplaced = 0;
-        int numRemained = 0;
-
-        // Update all pointers in the level above
-        for (id_t nodeIndex = 0; nodeIndex < _data[lev-1].size(); ++nodeIndex) {
-//            if (refCounts[lev - 1][nodeIndex] == 0) continue;
-            Node *node = &_data[lev - 1][nodeIndex];
-            // For all children...
-            for (int j = 0; j < 8; j++) {
-                // If this child exists...
-                if (node->existsChild(j)) {
-                    // If it has no normal correspondence, it should be replaced with a lossy replacement
-                    if (correspondences[node->children[j]] == (id_t) - 1) {
-//                        // it was replaced by a subtree higher up
-//                        auto it = multiLevelCorrespondences[lev].find(node->children[j]);
-//                        if (it == multiLevelCorrespondences[lev].end()) { exit(1); }
-//                        node->childLevels[j] = it->second.first;
-//                        node->children[j] = it->second.second;
-//                        // Node order in a higher level will change in future iteration...
-//                        // Therefore, the next loop updates pointers of nodes in lower level that point to nodes in this level
-//                        numReplaced++;
-                        printf("MISSING CORRESPONDENCE! ");
-                    } else {
-                        // Else, update the index from the normal list of correspondences
-                        node->children[j] = correspondences[node->children[j]];
-//                        numRemained++;
-                    }
-                }
-            }
-        }
-        printf("\n");
-
-        printf(" Replaced/remained: %i / %i\n", numReplaced, numRemained);
-    }
-
-    _stats.nNodesDAG = _nNodes;
-
-//    _state = S_SVO;
-//    toDAG(false);
-
-    /////////////////////////////////
-    /// Done: Print the results!   //
-    /////////////////////////////////
-//    printf("Total #nodes %zu / %zu. Total #comparisons: %u\n", _nNodes, prevNNodes, numTotalComparisons);
-//
-//    int totalElimNodes = 0;
-//    for (unsigned int i = 0; i < _levels; ++i) {
-//        totalElimNodes += multiLevelCorrespondences[i].size();
-//        id_t origSize = _data[i].size() + multiLevelCorrespondences[i].size();
-//        double pct = 100 * (multiLevelCorrespondences[i].size() / double(origSize));
-//        printf(" - Level %u:   \t%zu subtrees are equal to a subtree higher up. %zu / %i (%.2f%%) nodes of this level have been removed\n", i, multiLevelCorrespondences[i].size(), multiLevelCorrespondences[i].size(), origSize, pct);
-//    }
-//    printf("Total number of nodes that was removed: %u / %zu (%.2f%%)\n ", totalElimNodes, prevNNodes, (100 * totalElimNodes / double(prevNNodes)));
-
-
-}
 
 void GeomOctree::toLossyDag3() {
     // Reimplementation of toLossyDag2
@@ -1211,14 +714,11 @@ void GeomOctree::toLossyDag3() {
      * -
      */
 
-
-    // can't figure it out
-
     ///////////////////////////////////////
     // From scratch:
     ///////////////////////////////////////
-    /*
-     * Main idea: Find nodes in the DAG that are similar, merge them together, until a target number is reached
+    /**
+     * ToLossyDag3 idea: Find nodes in the DAG that are similar, merge them together, until a target number is reached
      * - Nodes are similar if the children in the leaf level are almost identical
      * - Removing nodes that are referenced frequently will result in more loss than those that are infrequently referenced
      * - - The reference count must take into account how often their parents are referenced as well, not just the individual node
@@ -1270,7 +770,6 @@ void GeomOctree::toLossyDag3() {
         return;
     }
 
-
     auto refCounts = this->sortByEffectiveRefCount();
 
     _nNodes = 1;
@@ -1278,7 +777,7 @@ void GeomOctree::toLossyDag3() {
     std::vector<id_t> correspondences;
     std::vector<Node> uniqueNodes;
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
-    std::map<id_t, bool> currentMatches, previousMatches, uniqueNodesChecker;
+    std::map<id_t, bool> uniqueNodesChecker;
 
     sl::time_point ts = _clock.now();
 
@@ -1301,8 +800,6 @@ void GeomOctree::toLossyDag3() {
         uniqueNodes.shrink_to_fit();
         correspondences.clear();
         correspondences.resize(oldLevSize, (id_t)-1);
-        currentMatches.clear();
-        currentMatches.swap(previousMatches);
         uniqueNodesChecker.clear();
 
         printf("Level %u: ", lev); fflush(stdout);
@@ -1330,17 +827,10 @@ void GeomOctree::toLossyDag3() {
             // Todo: Should use pre-computed hash to avoid cascade of lossy error
             uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
 
-            bool skip = false; // todo: Might be able to disable this, should test it
-//            for (int c = 0; c < 8; c++) { // don't merge nodes that are a parent of a correspondence match
-//                if (n.existsChildPointer(c) && previousMatches.count(n.children[c]) > 0) {
-//                    currentMatches[idA] = true;
-//                    skip = true;
-//                    break;
-//                }
-//            }
+            // Todo: don't merge nodes that are a parent of a cluster representative
 
             // Break when ref count is greater than 1
-            if (!skip && refCounts[lev][idA] == 1) {
+            if (refCounts[lev][idA] == 1) {
 
                 if (lev == _levels - 2) {
                     for (int i = 0; i < 64; ++i) {
@@ -2331,6 +1821,33 @@ void GeomOctree::toHiddenGeometryDAG() {
      *
      * Should be down top-down:
      * *
+     *
+     * SO. Either
+     * 1) create a single hash for each node, taking into consideration their insideMasks, or:
+     *      Then for candidate lookups, compute each hash possibility for the node in question
+     * 2) Create several hashes, for each combination of the children that are inside as if they are outside
+     *      Then for candidate lookups, compute one hash possibility
+     *
+     * In other words, for each node that has one or more children that are not exposed to the outside world,
+     * we can compute what the hash of a node would be that could replace it, and we can quickly look up
+     * whether such a node exists. Such a hash value can be computed for each of the children that is inside.
+     *
+     * Similar problem as lossy: If a node is marked as a correspondence, and itself can also correspond
+     * to another node, which is the better option? Compute all possibilities again?
+     *
+     * Also, should the initial hash values take into account the insideMask?
+     * Yes: Many nodes will not have a correspondence, so a lot of potential matches are lost, as the hidden geometry
+     *      can match to outside geometry of other nodes. When taking into account the mask, it is effectively set to empty space
+     * No:  Then it doesn't work at all. Can't generate hashes for nodes when take can have any possible geometry.
+     * Conclusion: Creating the initial hash map for all options seems like the best.
+     *      Essentially: This node can serve as any of these options, this node as any of these other options, etc.
+     *
+     * -> Create hashes bottom-up. For each of the combinations of x hidden children (2^x), create a hash
+     * -> Loop over every node, for each of the combinations of hidden children, look up candidates
+     *
+     * Note: probably needs a pre-processing step (mentioned earlier) where identical nodes with identical outsideMask are merged
+     *
+     *
      */
 
 

@@ -59,17 +59,19 @@ public:
                 // Else, perform MCL
                 auto subClusters = MCL(subGraph, id);
 
-
                 // Set cluster center at index 0 for all subgraphs
                 for (auto &cluster : subClusters) {
                     // Find only those edges that are in this specific subCluster
                     std::vector<Edge> clusterEdges;
                     for (const auto &e : subGraph) {
+                        // Todo: This could be quite slow for large clusters. Make an edgeMap again?
                         if (std::find(cluster.begin(), cluster.end(), e.sourceId) != cluster.end()
                          && std::find(cluster.begin(), cluster.end(), e.targetId) != cluster.end()) {
                             clusterEdges.emplace_back(e);
                         }
                     }
+//                    printf("Num edges: %zu, number of nodes: %zu, all graph edges: %zu", clusterEdges.size(), cluster.size(), subGraph.size());
+
                     setClusterCenterToBeginning(clusterEdges, cluster);
                 }
 
@@ -111,18 +113,25 @@ public:
         auto maxIt = std::find(cluster.begin(), cluster.end(), max->first);
 
 #if 1
+        // DEBUG: Check whether the node with highest edge weight is in the cluster
         if (maxIt == cluster.end()) {
-            printf("Cluster: ");
-            for (auto i = cluster.begin(); i != cluster.end(); ++i)
-                printf("%u ", *i);
-            printf("\nEdges: ");
-            for (auto i = edges.begin(); i != edges.end(); ++i)
-                printf("%u->%u ", i->sourceId, i->targetId);
-            printf("\n");
+//            printf("Cluster: ");
+//            for (auto i = cluster.begin(); i != cluster.end(); ++i)
+//                printf("%u ", *i);
+//            printf("\nEdges: ");
+//            for (auto i = edges.begin(); i != edges.end(); ++i)
+//                printf("%u->%u ", i->sourceId, i->targetId);
+//            printf("\n");
 
-            printf("Cluster size: %zu, num edges: %zu\n", cluster.size(), edges.size());
-            printf("Max node not in cluster?! %u, %f\n", max->first, max->second);
-            exit(-1);
+//            printf("Cluster size: %zu, num edges: %zu\n", cluster.size(), edges.size());
+//            printf("Cluster center not found?! This is likely an unconnected cluster, using first node as fallback. %u, %f\n", max->first, max->second);
+            //            exit(-1);
+
+            // Todo: Make each node a seperate cluster, or use the --force-connected=y option for MCL
+            // Currently unconnected clusters are still used as a cluster with a random node as representative
+
+            printf("Found unconnected cluster of size %zu. ", cluster.size());
+            maxIt = cluster.begin();
         }
 #endif
 
@@ -232,15 +241,14 @@ public:
 
                     // Add all connected edges to n2 to the queue
                     for (const Edge &e : n2Edges) {
-                        queue.emplace(e.sourceId ? e.targetId : e.sourceId);
+                        queue.emplace(n2 == e.sourceId ? e.targetId : e.sourceId);
                     }
                 }
             }
             std::vector<Edge> gVec(g.begin(), g.end());
 
-            // TODO: DEBUG: Check for duplicates in other graphs
 #if 0
-            printf("DEBUG: Check for duplicates in other graphs\n");
+//            printf("DEBUG: Check for duplicates in other graphs\n");
             unsigned int num_dupes = 0;
             for (const auto &og : subGraphs) {
                 for (const auto &oe : og) {
@@ -249,7 +257,7 @@ public:
                     }
                 }
             }
-            printf("FOUND DUPES: %u\n", num_dupes);
+            if (num_dupes > 0) printf("DUPES: %u ", num_dupes); fflush(stdout);
 #endif
 
             subGraphs.emplace_back(gVec);
