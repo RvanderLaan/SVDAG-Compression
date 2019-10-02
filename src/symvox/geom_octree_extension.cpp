@@ -30,7 +30,7 @@ void GeomOctree::initChildLevels() {
 
 /** Computes a uint64_t hash based on the child bitmasks of a node's children **/
 std::hash <uint64_t> hash64;
-uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int depth) {
+uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int depth, std::vector<uint64_t> &childHashes) {
     uint64_t key = 0;
 
     // At depth 0, just return the child mask
@@ -56,9 +56,9 @@ uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int 
             uint64_t childHash = origKeyHash << (c + 1u); // add some pseudo randomness when no child is at index c
 
             if (node.existsChildPointer(c)) {
-                childHash = hash64(computeNodeHash(child, depth - 1));
+//                childHash = hash64(computeNodeHash(child, depth - 1));
                 // TODO: reuse previous hash
-//                childHash = matchMaps[lev][node.children[c]];
+                childHash = childHashes[node.children[c]];
             }
 
             // bit shift so that identical child hashes don't cancel each other out
@@ -98,17 +98,34 @@ uint64_t GeomOctree::computeNodeHashBotUp(const GeomOctree::Node &node, const un
 
 #define WRITE_KEYS_TO_FILE 0
 /** Builds a multi-map of NodeHash -> Nodes with same hash */
-void GeomOctree::buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, unsigned int levStart, unsigned int levEnd) {
-    printf("[Match maps @D%u...", depth); fflush(stdout);
+void GeomOctree::buildMultiMap(
+        unsigned int depth,
+        std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
+        std::vector<std::vector<uint64_t>> &hashes,
+        unsigned int levStart,
+        unsigned int levEnd) {
+    printf("[Hashing @D%u...", depth); fflush(stdout);
 
 #if WRITE_KEYS_TO_FILE
     std::ofstream myfile("keys-" + std::to_string(depth) + ".txt", std::ios::out | std::ios::trunc);
 #endif
-    for (unsigned int lev = levStart; lev < levEnd - depth; ++lev) {
+    for (int lev = levEnd - 1; lev >= levStart; --lev) {
+        // If hashes have already been computed, hash computation can be skipped
+        // Note: Should be cleared beforehand if you do not want this
+        if (!hashes[lev].empty()) {
+            continue;
+        }
+
+        hashes[lev].reserve(_data[lev].size());
         matchMaps[lev].clear();
+
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
-            uint64_t key = computeNodeHash(_data[lev][nodeIndex], depth);
+            uint64_t key = computeNodeHash(
+                    _data[lev][nodeIndex],
+                    depth,
+                    hashes[std::min(_levels - 1u, lev + 1u)]);
             matchMaps[lev].insert(std::make_pair(key, nodeIndex));
+            hashes[lev][nodeIndex] = key;
 #if WRITE_KEYS_TO_FILE
                 myfile << std::to_string(lev) + ", " + std::to_string(_data[lev][nodeIndex].childrenBitmask) + " ->\t " + std::to_string(key) + "\n";stdout
 #endif
@@ -129,6 +146,7 @@ void GeomOctree::buildMultiMapBotUp(std::vector<std::multimap<uint64_t, id_t>> &
         hashes.clear();
         hashes[lev].reserve(_data[lev].size());
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+            // Only if the bit is set
             // Only store hash if the childMaskMask completely overlaps with the inside part of the outsideMask
             const auto& node = _data[lev][nodeIndex];
             if ((node.outsideMask & childMaskMask) != 0) continue;
@@ -154,6 +172,8 @@ void GeomOctree::DebugHashing() {
     }
     printf(", Total hashes, Total nodes\n");
 
+    std::vector<std::vector<uint64_t>> hashes(_levels);
+
     for (unsigned int lev = _levels - 2; lev > 0; --lev) {
         std::vector<unsigned int> hist(histSize);
 
@@ -162,7 +182,7 @@ void GeomOctree::DebugHashing() {
         // Compute node hashes for this node and its children up to the level above the leaves
         // Modify _levels - 1 to -2 to see how hashes collide when ignoring the leaf level
         unsigned int currentMatchDepth = std::max(_levels - lev - 2, 1u);
-        buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
+        buildMultiMap(currentMatchDepth, matchMaps, hashes, lev, lev + currentMatchDepth + 1);
 
         // Loop over every unique hash
         const auto& mm = matchMaps[lev];
@@ -777,9 +797,10 @@ void GeomOctree::toLossyDag3() {
     std::vector<id_t> correspondences;
     std::vector<Node> uniqueNodes;
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
+    std::vector<std::vector<uint64_t>> hashes(_levels);
     std::map<id_t, bool> uniqueNodesChecker;
 
-    sl::time_point ts = _clock.now();
+    sl::time_point ts = sl::real_time_clock::now();
 
     unsigned int nMatchesTotal = 0;
 
@@ -806,7 +827,14 @@ void GeomOctree::toLossyDag3() {
 
         // Compute node hashes for this node and its children up to the level above the leaves
         unsigned int currentMatchDepth = std::max(_levels - lev - 2, 1u);
-        buildMultiMap(currentMatchDepth, matchMaps, lev, lev + currentMatchDepth + 1);
+        if (lev == _levels - 3) {
+            // Since a depth of 1 is used at _levels - 2, those cannot be reused for hashes of _levels - 3
+            // So, clear hashes and recompute hashes for level below
+            // FIXME: This is an ugly hack
+            hashes[_levels - 3].clear();
+            buildMultiMap(0, matchMaps, hashes, lev - 1, lev + 1);
+        }
+        buildMultiMap(currentMatchDepth, matchMaps, hashes, lev, lev + 1);
 
         //////// FINDING EDGES FOR CLUSTERING ////////
         // For all nodes in this level, in reverse order (starting with least referenced)
@@ -824,8 +852,9 @@ void GeomOctree::toLossyDag3() {
             if (refCounts[lev][idA] > 1) continue; // should break but not sure if that affects omp stuff
 
             const Node &n = _data[lev][idA];
-            // Todo: Should use pre-computed hash to avoid cascade of lossy error
-            uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
+//            uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
+            // Use pre-computed hash to avoid cascade of lossy error
+            uint64_t nAKey = hashes[lev][idA];
 
             // Todo: don't merge nodes that are a parent of a cluster representative
 
@@ -1050,10 +1079,11 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
     ///////////////////////////////////////////////////////////////
     // try out unordered map for performance improvements --->>> nothing changed
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
+    std::vector<std::vector<uint64_t>> hashes;
 
     // Initial depth should depend on total # of levels, 1 seems enough for ~8K, 2 or higher for more
     unsigned int currentMatchDepth = _levels / 2;
-    buildMultiMap(currentMatchDepth, matchMaps);
+    buildMultiMap(currentMatchDepth, matchMaps, hashes);
 
     /////////////////////////////////
     /// Finding identical subtrees //
@@ -1111,7 +1141,7 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         unsigned int maxMatchDepth = _levels - levA - 1;
         if (maxMatchDepth < currentMatchDepth) {
             currentMatchDepth = maxMatchDepth; // currentMatchDepth / 2;
-            buildMultiMap(currentMatchDepth, matchMaps);
+            buildMultiMap(currentMatchDepth, matchMaps, hashes);
         }
 
         int stepLogger = (int)round((currentNodesToCheck.size() + 1) / 10.f);
@@ -1128,7 +1158,8 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
             curNodeIndex++;
 
             Node &nA = _data[levA][idA];
-            uint64_t nAKey = computeNodeHash(nA, currentMatchDepth);
+//            uint64_t nAKey = computeNodeHash(nA, currentMatchDepth, hashes[levA + 1]);
+            uint64_t nAKey = hashes[levA][idA];
 
             bool foundMatch = false;
 

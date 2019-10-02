@@ -153,17 +153,23 @@ private: // Internal tools
 
     unsigned int findAllSymDuplicateSubtrees();
 
-    void
-    diffSubtrees(unsigned int levA, unsigned int levB, const Node &nA, const Node &nB,
+    void diffSubtrees(unsigned int levA, unsigned int levB, const Node &nA, const Node &nB,
                  const unsigned int abortThreshold, unsigned int &accumulator);
 
-    uint64_t computeNodeHash(const Node &node, unsigned int depth);
+    uint64_t computeNodeHash(const Node &node, unsigned int depth, std::vector<uint64_t> &childHashes);
 
-    void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, unsigned int levStart, unsigned int levEnd);
-    inline void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps) { this->buildMultiMap(depth, matchMaps, 0, _levels); };
+    void buildMultiMap(
+            unsigned int depth,
+            std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
+            std::vector<std::vector<uint64_t>> &hashes,
+            unsigned int levStart,
+            unsigned int levEnd);
 
-    uint64_t
-    computeNodeHashBotUp(const Node &node, const unsigned int lev, const std::vector<std::vector<uint64_t>> &hashes,
+    inline void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, std::vector<std::vector<uint64_t>> &hashes) {
+        this->buildMultiMap(depth, matchMaps, hashes, 0, _levels);
+    };
+
+    uint64_t computeNodeHashBotUp(const Node &node, const unsigned int lev, const std::vector<std::vector<uint64_t>> &hashes,
                          uint8_t childMaskMask);
 
     void
