@@ -790,7 +790,9 @@ void GeomOctree::toLossyDag3() {
         return;
     }
 
-    auto refCounts = this->sortByEffectiveRefCount();
+//    auto refCounts = this->sortByEffectiveRefCount();
+    auto refCounts = this->sortByRefCount();
+    const int refCountThreshold = 2;
 
     _nNodes = 1;
     /** Every index denotes the index of the first duplicate of that node in uniqueNodes. Reset for each level. */
@@ -849,7 +851,7 @@ void GeomOctree::toLossyDag3() {
 				fflush(stdout);
 			}
             // only cluster nodes with 1 ref
-            if (refCounts[lev][idA] > 1) continue; // should break but not sure if that affects omp stuff
+            if (refCounts[lev][idA] > refCountThreshold) continue; // should break but not sure if that affects omp stuff
 
             const Node &n = _data[lev][idA];
 //            uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
@@ -857,51 +859,46 @@ void GeomOctree::toLossyDag3() {
             uint64_t nAKey = hashes[lev][idA];
 
             // Todo: don't merge nodes that are a parent of a cluster representative
-
-            // Break when ref count is greater than 1
-            if (refCounts[lev][idA] == 1) {
-
-                if (lev == _levels - 2) {
-                    for (int i = 0; i < 64; ++i) {
-                        uint64_t nAKeyMod = nAKey ^(1UL << i);
-                        auto candidates = matchMaps[lev].equal_range(nAKeyMod);
-                        for (auto it = candidates.first; it != candidates.second; ++it) {
-                            id_t idB = it->second;
-                            if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
-                            if (refCounts[lev][idB] != 1) continue; // Only compare to other 1 ref nodes
-
-                            // To avoid two identical edges, only add edges from low id to high id
-                            // (No need to compare idB to idA and adding another edge, as it would be the same edge)
-#pragma omp critical
-                            {
-                                edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, 1});
-                                uniqueNodesChecker[idA] = false;
-                                uniqueNodesChecker[idB] = false;
-                            };
-                        }
-                    }
-                } else {
-                    auto candidates = matchMaps[lev].equal_range(nAKey);
-
+            if (lev == _levels - 2) {
+                for (int i = 0; i < 64; ++i) {
+                    uint64_t nAKeyMod = nAKey ^(1UL << i);
+                    auto candidates = matchMaps[lev].equal_range(nAKeyMod);
                     for (auto it = candidates.first; it != candidates.second; ++it) {
                         id_t idB = it->second;
                         if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
-                        if (refCounts[lev][idB] != 1) continue; // Only compare to other 1 ref nodes
+                        if (refCounts[lev][idB] > refCountThreshold) continue; // Only compare to other 1 ref nodes
 
-                        // Todo: Check how similar this node actually is: Deep comparison (expensive!!)
-                        const Node &nB = _data[lev][idB];
-                        unsigned int diff = 0;
-                        this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
-
+                        // To avoid two identical edges, only add edges from low id to high id
+                        // (No need to compare idB to idA and adding another edge, as it would be the same edge)
 #pragma omp critical
-                        if (diff <= lossyDiff) {
-                            // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
-                            // Todo: Difference is currently linearly converted to similarity. Could also try 1 / diff
-                            float sim = 1.0f - ((float) diff / ((float) lossyDiff + 1.0f));
-                            edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, sim});
+                        {
+                            edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, 1});
                             uniqueNodesChecker[idA] = false;
                             uniqueNodesChecker[idB] = false;
-                        }
+                        };
+                    }
+                }
+            } else {
+                auto candidates = matchMaps[lev].equal_range(nAKey);
+
+                for (auto it = candidates.first; it != candidates.second; ++it) {
+                    id_t idB = it->second;
+                    if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
+                    if (refCounts[lev][idB] > refCountThreshold) continue; // Only compare to other 1 ref nodes
+
+                    // Todo: Check how similar this node actually is: Deep comparison (expensive!!)
+                    const Node &nB = _data[lev][idB];
+                    unsigned int diff = 0;
+                    this->diffSubtrees(lev, lev, n, nB, lossyDiff + 1, diff);
+
+#pragma omp critical
+                    if (diff <= lossyDiff) {
+                        // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
+                        // Todo: Difference is currently linearly converted to similarity. Could also try 1 / diff
+                        float sim = 1.0f - ((float) diff / ((float) lossyDiff + 1.0f));
+                        edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, sim});
+                        uniqueNodesChecker[idA] = false;
+                        uniqueNodesChecker[idB] = false;
                     }
                 }
             }
@@ -917,8 +914,8 @@ void GeomOctree::toLossyDag3() {
 
         //////// COMPARING CLUSTERS TO OTHER NODES ////////
         for (id_t idA = 0; idA < _data[lev].size(); ++idA) {
-            // Add all nodes with > 1 ref to uniqueNodes
-            if (refCounts[lev][idA] == 1 && uniqueNodesChecker.find(idA) != uniqueNodesChecker.end()) continue;
+            // Add all nodes with > threshold ref count to uniqueNodes
+            if (refCounts[lev][idA] <= refCountThreshold && uniqueNodesChecker.find(idA) != uniqueNodesChecker.end()) continue;
             correspondences[idA] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
             uniqueNodes.push_back(_data[lev][idA]);
         }
@@ -928,6 +925,8 @@ void GeomOctree::toLossyDag3() {
             // Representative node is put at index 0
             id_t repId = clusters[c][0];
             id_t repIdNew = uniqueNodes.size();
+
+            // TODO: Merge cluster representative with node that has > refCountThreshold ref count, if similar one exists
             /*
             const Node &n = _data[lev][repId];
             uint64_t repKey = computeNodeHash(n, currentMatchDepth);

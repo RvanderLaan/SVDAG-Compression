@@ -172,9 +172,7 @@ private: // Internal tools
     uint64_t computeNodeHashBotUp(const Node &node, const unsigned int lev, const std::vector<std::vector<uint64_t>> &hashes,
                          uint8_t childMaskMask);
 
-    void
-    buildMultiMapBotUp(std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
-                       std::vector<std::vector<uint64_t>> &hashes,
-                       uint8_t childMaskMask);
+    void buildHiddenGeomMultiMap(std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
+                       std::vector<std::vector<uint64_t>> &hashes);
 
 };
