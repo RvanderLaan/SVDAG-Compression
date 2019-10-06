@@ -560,7 +560,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 			const bool hit = (ts.level >= max_level || resolution_ok(ts.t_current, ts.cell_size, projection_factor)); 
 			if (hit) {
 				norm = -vec3(stepDir);
-				return vec4(ts.t_current * scale, ts.cell_size * scale, float(iteration_count), ts.node_index);  // intersection
+				return vec4(ts.t_current * scale, ts.level, float(iteration_count), ts.node_index);  // intersection
 			} else {
 				down_in(r, ts);
 				fetch_data(ts);
@@ -696,7 +696,7 @@ void main() {
 
 			// Hit position = camera origin + depth * ray direction
 			vec3 hitPos = r.o + result.x * r.d;
-			const float cellSize = result.y;
+			const float cellSize = 2. * rootHalfSide / result.y;
 
 			// ====Voxel normal direction====
 //			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
@@ -720,7 +720,7 @@ void main() {
 			// ====Diffuse shading====
 			vec3 lightDir = normalize(lightPos - hitPos);
 			t *= 0.5 + 0.5 * max(dot(hitNorm, lightDir), 0);
-			
+
 			// ====Shadow====
 			if (enableShadows) {
 				// Trace ray to light pos
@@ -751,14 +751,25 @@ void main() {
 		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
 //			color *= randomColor(uint(result.w));
 			uint nodeIndex = uint(result.w);
+
+
+#if (SSVDAG || USSVDAG)
+			// Visualize ref count by dividing (sorted) index by num of nodes in level
+			// Todo: Should make this a sperate render mode
+			int hitLev = int(result.y);
+			float levSize = hitLev == LEVELS - 1
+				? textureSize(leafNodes)
+				: levelOffsets[hitLev + 1] - levelOffsets[hitLev];
+			float indexInLevel = nodeIndex / levSize;
+			color *= TurboColormap(indexInLevel);
+#else
 			vec3 randomColor = normalize(vec3(
-				(nodeIndex % 100) / 100.f,
-				((3 * nodeIndex) % 200) / 200.f,
-				((2 * nodeIndex) % 300) / 300.f
+			(nodeIndex % 100) / 100.f,
+			((3 * nodeIndex) % 200) / 200.f,
+			((2 * nodeIndex) % 300) / 300.f
 			));
-			// Todo: Visualize ref count by dividing (sorted) index by num of nodes in level
-//			vec3 randomColor = vec3(1.0f - result.w / (1.0f * textureSize(nodes)));
 			color *= randomColor;
+#endif
 		} else if (result.w == selectedVoxelIndex) {
 			// Highlight selected voxel index with blue
 			color.r *= 0.5f;
