@@ -8,6 +8,7 @@
 #include <stack>
 #include <fstream>
 #include <iomanip>      // std::setprecision
+#include <bitset>
 
 #include "geom_octree.hpp"
 #include "cluster.hpp"
@@ -137,9 +138,13 @@ void GeomOctree::buildMultiMap(
     printf("]"); fflush(stdout);
 };
 
+bool checkBit(unsigned int n, unsigned int i) {
+    return (n >> i) & 1u;
+}
+
 /** Bottom-up version: Will compute hashes for all nodes in a bottom-up fashion, which should be faster, instead of specific levels as in the previous func */
-void GeomOctree::buildMultiMapBotUp(std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
-        std::vector<std::vector<uint64_t>> &hashes, uint8_t childMaskMask) {
+void GeomOctree::buildHiddenGeomMultiMap(std::vector<std::multimap<uint64_t, id_t>> &matchMaps,
+        std::vector<std::vector<uint64_t>> &hashes) {
 //    printf("[Match maps (BU)..."); fflush(stdout);
     for (int lev = _levels - 1; lev >= 0; --lev) {
         matchMaps[lev].clear();
@@ -148,12 +153,39 @@ void GeomOctree::buildMultiMapBotUp(std::vector<std::multimap<uint64_t, id_t>> &
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
             // Only if the bit is set
             // Only store hash if the childMaskMask completely overlaps with the inside part of the outsideMask
-            const auto& node = _data[lev][nodeIndex];
-            if ((node.outsideMask & childMaskMask) != 0) continue;
+            Node node = _data[lev][nodeIndex];
+            const sl::uint8_t origChildMask = node.childrenBitmask;
 
-            int64_t hash = computeNodeHashBotUp(_data[lev][nodeIndex], lev, hashes, childMaskMask);
-            matchMaps[lev].insert(std::make_pair(hash, nodeIndex));
-            hashes[lev].push_back(hash);
+            // for all 2^x possible masks, add a hash
+            // insert a 1 into the childMask for each option where a child is inside
+
+            unsigned int bitsToToggle = (~node.outsideMask) & origChildMask;
+            unsigned int numBitsToToggle = 0;
+            unsigned int bitOffsets[numBitsToToggle];
+            for (unsigned int i = 0; i < 8; ++i) {
+                if (checkBit(bitsToToggle, i)) {
+                    bitOffsets[numBitsToToggle++] = i;
+                }
+            }
+
+            unsigned int numHashes = std::pow(2, numBitsToToggle);
+            for (unsigned int i = 0; i < numHashes; ++i) {
+                unsigned int hidMask = 0;
+                for (unsigned int j = 0; j < numBitsToToggle; ++j) {
+                    if (checkBit(i, j)) {
+                        hidMask |= 1u << bitOffsets[j];
+                    }
+                }
+
+                unsigned int newChildMask = origChildMask & (~hidMask);
+                node.childrenBitmask = newChildMask;
+                int64_t hash = computeNodeHash(node, lev, hashes[std::min(lev + 1u, _levels - 1u)]);
+                matchMaps[lev].insert(std::make_pair(hash, nodeIndex));
+
+                if (i == 0) { // only save hash for normal hash
+                    hashes[lev][nodeIndex] = hash;
+                }
+            }
         }
     }
 //    printf("]"); fflush(stdout);
@@ -1723,20 +1755,33 @@ void GeomOctree::toHiddenGeometryDAG() {
     // Todo: For memory issues, try to merge to a DAG while also taking into account the outsideMask
     // High likelihood that identical nodes have an identical outsideMask, at least in lower levels
 
+    /**
+     * Plan:
+     * * Create hash map for each option where a child node is inside
+     * If a node is used a are reprsentative, it can no longer be used in
+     * 
+     * let's say we use 1 multimap, we know all hashes
+     * Looking for matches for each node nA:
+     * - Compute hash for every option of nodes inside to be outside
+     * - Look up candidates
+     * - Find match
+     *      - Which will replace the other?
+     *      - Pick the one which has the highest probability of matching with other nodes: The most inside Nodes
+     *      - Mark node as 'protected': Can't be replaced by other node
+     *      
+     * 
+     */
+
+
+
     printf(" * - Preparing hash maps:"); fflush(stdout);
     // For every combination of hidden child masks (256) > For every level > For every node
-    std::vector<std::vector<std::multimap<uint64_t, id_t>>> hidChildMatchMaps;
-    std::vector<std::vector<std::vector<uint64_t>>> hidChildHashes;
-    for (int i = 0; i < 256; i++) {
-        if (i % 16 == 0) {
-            printf("%.2f%% ", 100.0 * i / 256.0); fflush(stdout);
-        }
-        hidChildMatchMaps.emplace_back(std::vector<std::multimap<uint64_t, id_t>>(_levels));
-        hidChildHashes.emplace_back(std::vector<std::vector<uint64_t>>(_levels));
+    std::vector<std::multimap<uint64_t, id_t>> matchMaps;
+    std::vector<std::vector<uint64_t>> hashes;
 
-        // Compute all candidate match maps for all levels where the hidden child mask equals i
-        buildMultiMapBotUp(hidChildMatchMaps[i], hidChildHashes[i], i);
-    }
+    // This adds hashes for each option of inside hidden children to be
+//    buildHiddenGeomMultiMap(matchMaps, hashes);
+
     printf("\n");
 
     ///////////////////////////////////////////////////////
@@ -1748,6 +1793,8 @@ void GeomOctree::toHiddenGeometryDAG() {
     std::vector<id_t> correspondences;
     std::vector<Node> uniqueNodes;
 
+    std::map<id_t, id_t> unresolvedCorrespondences;
+
     // For every level, starting at the leaves...
     for (unsigned int lev = _levels - 2; lev > 1; --lev) {
         // Clear the lists used to keep track of correspondences etc
@@ -1756,44 +1803,118 @@ void GeomOctree::toHiddenGeometryDAG() {
         uniqueNodes.shrink_to_fit();
         correspondences.clear();
         correspondences.resize(oldLevSize);
-
-        bool foundMatch = false;
+        std::fill(correspondences.begin(), correspondences.end(), (id_t) - 1);
 
         // For all nodes in this level...
         // Todo: compare to most referenced first?
-        for (id_t i = 0; i < _data[lev].size(); i++) {
-            Node n = _data[lev][i];
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); nodeIndex++) {
+            Node n = _data[lev][nodeIndex];
             if (!n.hasChildren()) continue; // skip empty nodes
+            if (correspondences[nodeIndex] != (id_t) - 1) continue; // skip nodes with an existing correspondence
+            if (unresolvedCorrespondences.find(nodeIndex) != unresolvedCorrespondences.end()) continue;
 //            if (lev == 1) {
 //                printf("Node %i has hash %u", i, hidChildHashes[i][lev][0])
 //            }
 
             // Todo: Should apply clustering here, or at least find the best candidate
             // If this node is already used as a unique node, skip it
-            if (std::find(correspondences.begin(), correspondences.end(), i) != correspondences.end()) {
-                continue;
-            }
+//            if (std::find(correspondences.begin(), correspondences.end(), i) != correspondences.end()) {
+//                continue;
+//            }
 
-            uint64_t hash = hidChildHashes[n.outsideMask][lev][i];
+//            uint64_t hash = hashes[lev][nodeIndex];
 
-            for (int h = 0; h < 256; h++) {
-                auto candidates = hidChildMatchMaps[h][lev].equal_range(hash);
-                for (auto it = candidates.first; it != candidates.second; ++it) {
-                    id_t matchId = it->second;
-                    if (matchId != i) {
-                        // Todo: Deep comparison?
-                        foundMatch = true;
-                        correspondences[i] = matchId; // store duplicate node
+            // Todo: Again, for each hash option, look up candidates
+            // Merge with one that
+//            for (int h = 0; h < 256; h++) {
+//                auto candidates = matchMaps[lev].equal_range(hash);
+//                for (auto it = candidates.first; it != candidates.second; ++it) {
+//                    id_t matchId = it->second;
+//                    if (matchId != i) {
+//                        // Todo: Deep comparison?
+//                        foundMatch = true;
+//                        correspondences[i] = matchId; // store duplicate node
+//                        break;
+//                    }
+//                }
+//                if (foundMatch) break;
+//            }
+
+            // TODO: This is a brute force approach, just testing whether it works
+            for (id_t idB = 0; idB < _data[lev].size(); idB++) {
+                if (nodeIndex == idB) continue;
+
+                Node nB = _data[lev][idB];
+                // Merge nodes if their visible children overlap. Choose node with least hidden children
+
+                // Todo: Should we keep looking for a better match once one is found,
+                // or will the first match be matching to another node that this node can match to? I think so...
+
+                sl::uint8_t visibleChildrenA = ~n.outsideMask;
+                sl::uint8_t visibleChildrenB = ~nB.outsideMask;
+
+                sl::uint8_t overlapVisChildren = visibleChildrenA & visibleChildrenB;
+
+                bool couldReplace = false;
+                id_t replacer = nodeIndex;
+                id_t replaced = idB;
+
+                if (overlapVisChildren == visibleChildrenA) { // Node A could replace node B
+                   couldReplace = true;
+                } else if (overlapVisChildren == visibleChildrenB) { // Node B could replace node A
+                    couldReplace = true;
+                    replacer = idB;
+                    replaced = nodeIndex;
+                }
+
+                if (couldReplace) {
+                    const Node &replacerNode = _data[lev][replacer];
+                    const Node &replacedNode = _data[lev][replaced];
+                    bool identicalVisibleChildren = true;
+                    for (int c = 0; c < 8; c++) {
+                        // If there is a visible child, it needs to be identical, even if empty
+                        if (checkBit(overlapVisChildren, c)) {
+                            if (replacerNode.existsChild(c)) {
+                                if (replacedNode.children[c] != replacerNode.children[c]) {
+                                    identicalVisibleChildren = false;
+                                    break;
+                                }
+                            } else if (replacedNode.existsChild(c)) {
+                                identicalVisibleChildren = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (identicalVisibleChildren) {
+                        // Check if replacer is a unique node
+                        if (correspondences[replacer] != (id_t) - 1) {
+                            correspondences[replaced] = correspondences[replacer];
+                        } else {
+                            unresolvedCorrespondences[replaced] = replacer; // we don't know yet if replacer is unique
+                        }
                         break;
                     }
                 }
-                if (foundMatch) break;
             }
 
-
-            if (!foundMatch) { // !found
-                correspondences[i] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
+            if (correspondences[nodeIndex] == (id_t) - 1) { // !found
+                correspondences[nodeIndex] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
                 uniqueNodes.push_back(n);
+            }
+        }
+
+        // Keep looking for correspondences until all have been resolved
+        while (!unresolvedCorrespondences.empty()) {
+            // Correspondences are pointing to the old node list, now make them point to new nodes
+            for (auto it = unresolvedCorrespondences.begin(); it != unresolvedCorrespondences.end(); it++) {
+                if (correspondences[it->second] != (id_t) -1) {
+                    // the correspondence has been resolved
+                    correspondences[it->first] = correspondences[it->second];
+                } else if (unresolvedCorrespondences.find(it->second) != unresolvedCorrespondences.end()) {
+                    // the correspondence points to another unresolved correspondence
+                    unresolvedCorrespondences[it->first] = unresolvedCorrespondences[it->second];
+                }
             }
         }
 
