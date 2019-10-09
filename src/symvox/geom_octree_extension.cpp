@@ -743,7 +743,7 @@ unsigned int GeomOctree::findAllSymDuplicateSubtrees() {
  */
 
 
-void GeomOctree::toLossyDag3() {
+void GeomOctree::toLossyDag3(float lossyInflation, int allowedLossyDiffFactor, int includedNodeRefCount) {
     // Reimplementation of toLossyDag2
     // Before starting anew:
     /*
@@ -822,9 +822,8 @@ void GeomOctree::toLossyDag3() {
         return;
     }
 
-//    auto refCounts = this->sortByEffectiveRefCount();
-    auto refCounts = this->sortByRefCount();
-    const int refCountThreshold = 2;
+   auto refCounts = this->sortByEffectiveRefCount();
+    // auto refCounts = this->sortByRefCount();
 
     _nNodes = 1;
     /** Every index denotes the index of the first duplicate of that node in uniqueNodes. Reset for each level. */
@@ -845,7 +844,8 @@ void GeomOctree::toLossyDag3() {
 		int stepLogger = (int)round(_data[lev].size() / 10.0f);
 
 		// Todo: Should depend on how many leaf nodes there are (missing) on the source node
-        const int lossyDiff = (int) (_levels - lev) * 2; // should be outside variable: maximum allowed lossy diff
+        // Subtrees with 3 voxels should be treated differently than those with 50+ voxels
+        const int lossyDiff = (int) (_levels - lev) * allowedLossyDiffFactor;
 
         std::vector<cluster::Edge> edges;
 
@@ -883,7 +883,7 @@ void GeomOctree::toLossyDag3() {
 				fflush(stdout);
 			}
             // only cluster nodes with 1 ref
-            if (refCounts[lev][idA] > refCountThreshold) continue; // should break but not sure if that affects omp stuff
+            if (refCounts[lev][idA] > includedNodeRefCount) continue; // should break but not sure if that affects omp stuff
 
             const Node &n = _data[lev][idA];
 //            uint64_t nAKey = computeNodeHash(n, currentMatchDepth);
@@ -898,7 +898,7 @@ void GeomOctree::toLossyDag3() {
                     for (auto it = candidates.first; it != candidates.second; ++it) {
                         id_t idB = it->second;
                         if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
-                        if (refCounts[lev][idB] > refCountThreshold) continue; // Only compare to other 1 ref nodes
+                        if (refCounts[lev][idB] > includedNodeRefCount) continue; // Only compare to other 1 ref nodes
 
                         // To avoid two identical edges, only add edges from low id to high id
                         // (No need to compare idB to idA and adding another edge, as it would be the same edge)
@@ -916,7 +916,7 @@ void GeomOctree::toLossyDag3() {
                 for (auto it = candidates.first; it != candidates.second; ++it) {
                     id_t idB = it->second;
                     if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
-                    if (refCounts[lev][idB] > refCountThreshold) continue; // Only compare to other 1 ref nodes
+                    if (refCounts[lev][idB] > includedNodeRefCount) continue; // Only compare to other 1 ref nodes
 
                     // Todo: Check how similar this node actually is: Deep comparison (expensive!!)
                     const Node &nB = _data[lev][idB];
@@ -941,13 +941,13 @@ void GeomOctree::toLossyDag3() {
         // - We prefer to match nodes with a node that is referenced more than once
         // - Then, find which nodes are potential matches the most frequently
         printf("\n\tClustering... "); fflush(stdout);
-        const std::vector<std::vector<unsigned int>> clusters = cluster::clusterSubgraphs(edges, lev);
+        const std::vector<std::vector<unsigned int>> clusters = cluster::clusterSubgraphs(edges, lossyInflation, lev);
         printf(" Done! \n"); fflush(stdout);
 
         //////// COMPARING CLUSTERS TO OTHER NODES ////////
         for (id_t idA = 0; idA < _data[lev].size(); ++idA) {
             // Add all nodes with > threshold ref count to uniqueNodes
-            if (refCounts[lev][idA] <= refCountThreshold && uniqueNodesChecker.find(idA) != uniqueNodesChecker.end()) continue;
+            if (refCounts[lev][idA] <= includedNodeRefCount && uniqueNodesChecker.find(idA) != uniqueNodesChecker.end()) continue;
             correspondences[idA] = (id_t) uniqueNodes.size(); // the correspondence is this node itself
             uniqueNodes.push_back(_data[lev][idA]);
         }
@@ -958,7 +958,7 @@ void GeomOctree::toLossyDag3() {
             id_t repId = clusters[c][0];
             id_t repIdNew = uniqueNodes.size();
 
-            // TODO: Merge cluster representative with node that has > refCountThreshold ref count, if similar one exists
+            // TODO: Merge cluster representative with node that has > includedNodeRefCount ref count, if similar one exists
             /*
             const Node &n = _data[lev][repId];
             uint64_t repKey = computeNodeHash(n, currentMatchDepth);
@@ -1021,11 +1021,13 @@ void GeomOctree::toLossyDag3() {
         }
     }
 
-    _stats.toDAGTime = _clock.now() - ts;
+    _stats.toLSVDAGTime = _clock.now() - ts;
+
+    printf("Lossy compressed from %zu to %zu nodes.\n", _stats.nNodesDAG, _nNodes);
 
     _stats.nNodesDAG = _nNodes;
 
-    printf("OK! [%s]\n", sl::human_readable_duration(_stats.toDAGTime).c_str());
+    printf("OK! [%s]\n", sl::human_readable_duration(_stats.toLSVDAGTime).c_str());
 
     this->sortByEffectiveRefCount(); // only for getting new ref counts
 

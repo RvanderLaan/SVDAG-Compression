@@ -96,27 +96,36 @@ int main(int argc, char ** argv) {
 	}
 
     bool lossy = false;
-    bool lossy2 = false;
 	bool multiLevel = false;
 	bool exploitHiddenGeom = false;
-	float lossyTargetPct = 0.85;
+
+	float lossyInflation = 2.0;
+	int allowedLossyDiffFactor = 2;
+	int includedNodeRefCount = 1;
 
 	for (int i = 4; i < argc; ++i) {
 		std::string arg = argv[i];
-		if (arg == "--lossy" || arg == "-l") 
-			lossy = true;
-		if (arg == "--lossy2" || arg == "-l2") {
+		if (arg == "--lossy" || arg == "-l") {
 		    try {
 				if (i + 1 < argc) {
-		        	lossyTargetPct = std::stof(argv[i + 1]);
+					// Clamped between 1.2 and 10 (https://micans.org/mcl/man/mclfaq.html#toc-granularity)
+		        	lossyInflation = std::stof(argv[i + 1]);
+					lossyInflation = std::min(10.0f, std::max(1.2f, lossyInflation));
 				}
-		        if (lossyTargetPct <= 0 || lossyTargetPct > 1) {
-		            printf("Lossy target percentage should be between 0 and 1\n"); exit(1);
-		        }
+		        if (i + 2 < argc) {
+					// Clamped between 1 and 8, as >8 diff would mean ???
+					allowedLossyDiffFactor = std::stoi(argv[i + 2]);
+					allowedLossyDiffFactor = std::min(100, std::max(1, allowedLossyDiffFactor));
+				}
+		        if (i + 3 < argc) {
+					includedNodeRefCount = std::stoi(argv[i + 3]);
+					includedNodeRefCount = std::min(1000000, std::max(1, includedNodeRefCount));
+				}
 		    } catch(std::invalid_argument&) {
-		        printf("Could not parse lossy target percentage, using default of %.2f%%\n", 100.0 * lossyTargetPct);
+		        printf(" --- WARNING: Could not parse lossy compression parameters, using defaults. ---\n");
 		    }
-			lossy2 = true;
+			printf("Lossy parameters: inflation %.1f, allowed diff factor: %i, included node ref count: %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
+			lossy = true;
 		}
 		else if (arg == "--cross-level-merging" || arg == "-c")
 			multiLevel = true;
@@ -124,7 +133,7 @@ int main(int argc, char ** argv) {
             exploitHiddenGeom = true;
 	}
 
-	printf("Lossy2: %d, Cross-level: %d, Hidden geom: %d\n", lossy2, multiLevel, exploitHiddenGeom);
+	printf("Lossy: %d, Cross-level: %d, Hidden geom: %d\n", lossy, multiLevel, exploitHiddenGeom);
 
 	GeomOctree octree(&scene);
 
@@ -144,15 +153,13 @@ int main(int argc, char ** argv) {
             octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
         }
         svo.encode(octree);
-        if (lossy) {
-//            octree.toLossyDAG();
-        } else if (exploitHiddenGeom) {
+		if (exploitHiddenGeom) {
             octree.hiddenGeometryFloodfill();
 //            octree.toHiddenGeometryDAG();
-            octree.toDAG();
-        } else {
-            octree.toDAG();
-        }
+		}
+
+		octree.toDAG();
+        
 	}
 	else {
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
@@ -181,25 +188,39 @@ int main(int argc, char ** argv) {
 
 //	octree.DebugHashing();
 
-    if (lossy2) {
-//        octree.toLossyDAG2(lossyTargetPct);
-        octree.toLossyDag3();
-    }
 
-	// Save single-level merged
+
+
+	// Prepare for saving file to disk
+	std::string path = sl::pathname_directory(inputFile);
+	std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
+	std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
+	std::string sep = sl::pathname_directory_separators();
+	std::string levStr = "_" + std::to_string(nLevels);
+
+	int precisionVal = 1;
+	std::string trimmedInfl = std::to_string(lossyInflation).substr(0, std::to_string(lossyInflation).find(".") + precisionVal + 1);
+		
+	std::string paramStr = "-l_" + trimmedInfl + "_" + std::to_string(allowedLossyDiffFactor) + "_" + std::to_string(includedNodeRefCount);
+
+	// svdag.save(basePath + levStr + ".svdag");
+
+	if (lossy) {
+		EncodedSVDAG svdag2;
+		svdag2.encode(octree);
+		svdag2.save(basePath + levStr + ".svdag");
+
+        octree.toLossyDag3(lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
+	}
+
+
+	// Encode conventional SVDAG
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
-
 
 	if (multiLevel) {
 		// TODO: Clean this up later
 		// This block will save both the single and multi level merged SVDAG
-		std::string path = sl::pathname_directory(inputFile);
-		std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
-		std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
-
-		std::string sep = sl::pathname_directory_separators();
-
 		svdag.save(basePath + "-single.svdag");
 
 		octree.mergeAcrossAllLevels();
@@ -208,7 +229,7 @@ int main(int argc, char ** argv) {
 		svdag2.save(basePath + "-multi.svdag");
 	}
 
-    if (!lossy && !multiLevel && !exploitHiddenGeom) {
+    if (!multiLevel && !exploitHiddenGeom) {
         octree.toSDAG(false, false);
     }
 
@@ -221,18 +242,17 @@ int main(int argc, char ** argv) {
     EncodedSSVDAG psvdag;
     // psvdag.encode(octreeCopy);
 
-    bool saveAll = false;
+    bool saveAll = true;
 
     if (saveAll) {
-        std::string path = sl::pathname_directory(inputFile);
-        std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
+		std::string infix = levStr;
+		if (lossy)
+			infix += paramStr;
+		svdag.save(basePath + levStr + paramStr + ".svdag");
 
-        std::string basePath = path + sl::pathname_directory_separators() + baseName + "_" + std::to_string(nLevels);
-
-        //svo.save(basePath + ".svo");
-        svdag.save(basePath + ".svdag");
-        ussvdag.save(basePath + ".ussvdag");
-        ssvdag.save(basePath + ".ssvdag");
+        svdag.save(basePath + infix+ ".svdag");
+        ussvdag.save(basePath + infix + ".ussvdag");
+        ssvdag.save(basePath + infix + ".ssvdag");
 //        psvdag.save(basePath + ".psvdag");
     } else {
         for (int i = 4; i < argc; ++i) {
@@ -272,10 +292,11 @@ int main(int argc, char ** argv) {
 	printf("Encoded SVDAG      : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svdag.getDataSize()).c_str(),   (8 * svdag.getDataSize())   / float(octree.getNVoxels()));
 	printf("Encoded USSVDAG    : %s\t(%.3f bits/vox)\n", sl::human_readable_size(ussvdag.getDataSize()).c_str(), (8 * ussvdag.getDataSize()) / float(octree.getNVoxels()));
 	printf("Encoded SSVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(ssvdag.getDataSize()).c_str(), (8 * ssvdag.getDataSize()) / float(octree.getNVoxels()));
-	printf("Encoded PSVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(psvdag.getDataSize()).c_str(), (8 * psvdag.getDataSize()) / float(octree.getNVoxels()));
+	// printf("Encoded PSVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(psvdag.getDataSize()).c_str(), (8 * psvdag.getDataSize()) / float(octree.getNVoxels()));
 	printf("SSVDAG / DAG       : %.1f %%\n", 100.f * ssvdag.getDataSize() / (float)svdag.getDataSize());
 	printf("SSVDAG / SVO       : %.1f %%\n", 100.f * ssvdag.getDataSize() / (float)stats.nNodesSVO);
 	printf("SVO->SVDAG time    : %s\n", sl::human_readable_duration(stats.toDAGTime).c_str());
+	printf("SVDAG->LSVDAG time : %s\n", sl::human_readable_duration(stats.toLSVDAGTime).c_str());
 	printf("SVDAG->SSVDAG time : %s\n", sl::human_readable_duration(stats.toSDAGTime).c_str());
 	printf("Total time         : %s\n", sl::human_readable_duration(totalTime).c_str());
 	printf("===================================================================\n\n");

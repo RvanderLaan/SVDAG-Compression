@@ -33,7 +33,9 @@ public:
     };
 
     static inline std::vector<std::vector<unsigned int>> clusterSubgraphs(
-            const std::vector<Edge> &edges, int id = 0) {
+            const std::vector<Edge> &edges,
+            float inflation,
+            int id = 0) {
         const auto subGraphs = findSubGraphs(edges);
         printf("Found %zu subgraphs of %zu edges. ", subGraphs.size(), edges.size());
         std::vector<std::vector<unsigned int>> clusters;
@@ -57,7 +59,7 @@ public:
                 clusters.emplace_back(clusterVec);
             } else {
                 // Else, perform MCL
-                auto subClusters = MCL(subGraph, id);
+                auto subClusters = MCL(subGraph, inflation, id);
 
                 // Set cluster center at index 0 for all subgraphs
                 for (auto &cluster : subClusters) {
@@ -130,7 +132,8 @@ public:
             // Todo: Make each node a seperate cluster, or use the --force-connected=y option for MCL
             // Currently unconnected clusters are still used as a cluster with a random node as representative
 
-            printf("Found unconnected cluster of size %zu. ", cluster.size());
+            if (cluster.size() > 2)
+                printf("Found unconnected cluster of size %zu. ", cluster.size());
             maxIt = cluster.begin();
         }
 #endif
@@ -142,7 +145,10 @@ public:
     }
 
     static inline std::vector<std::vector<unsigned int>> MCL(
-            const std::vector<Edge> &edges, int id = 0) {
+            const std::vector<Edge> &edges,
+            float inflation,
+            int id = 0
+    ) {
         std::vector<std::vector<unsigned int>> clusters;
         if (edges.empty()) return clusters;
 
@@ -159,7 +165,8 @@ public:
         edgesFile.close();
 
         std::string nT = std::to_string((int) omp_get_max_threads());
-        std::string cmd = "$HOME/local/bin/mcl " + fnIn + " --abc -I 2.0 -q x -V all -te " + nT + " -o " + fnOut; // -scheme 1
+        std::string I = std::to_string(inflation);
+        std::string cmd = "$HOME/local/bin/mcl " + fnIn + " --abc -I " + I + " -q x -V all -te " + nT + " -o " + fnOut; // -scheme 1
 //        std::string cmd = "export OMP_NUM_THREADS=" + nT + "; ../../hipmcl/bin/hipmcl -M " + fnIn + " -I 2.0 -per-process-mem 0.1 -o " + fnOut;
 
         int res = std::system(cmd.c_str());

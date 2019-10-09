@@ -450,7 +450,7 @@ void OctreeDDARenderer::clearVoxel(int position)
 		printf("\t- Deleting voxel index %u \n", nodeIndex);
 	}
 
-	printf("Index: %u, sizeof uint32_t: %u, uint32_t(0): %u \n", nodeIndex, sizeof(sl::uint32_t), sl::uint32_t(0));
+	printf("Index: %u, sizeof uint32_t: %zu, uint32_t(0): %u \n", nodeIndex, sizeof(sl::uint32_t), sl::uint32_t(0));
 
     // Instead of replacing with 0,
     // copy leaf to end of node list, update pointer to it

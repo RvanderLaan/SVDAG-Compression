@@ -50,7 +50,7 @@ public:
 		size_t nNodesLastLevSVO, nNodesLastLevDAG, nNodesLastLevSDAG;
 		size_t simulatedEncodedSVOSize;
 		size_t memFootprint;
-		sl::time_duration buildSVOTime, buildDAGTime, toDAGTime, toSDAGTime;
+		sl::time_duration buildSVOTime, buildDAGTime, toDAGTime, toLSVDAGTime, toSDAGTime;
 
 	};
 
@@ -126,7 +126,7 @@ public:
 	// Extensions
     void toLossyDAG(bool internalCall = false);
     void toLossyDAG2(float qualityPct);
-    void toLossyDag3();
+    void toLossyDag3(float lossyInflation, int allowedLossyDiffFactor, int includedNodeRefCount);
     unsigned int mergeAcrossAllLevels();
     void symMergeAcrossAllLevels();
 
