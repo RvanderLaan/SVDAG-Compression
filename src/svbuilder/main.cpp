@@ -165,17 +165,22 @@ int main(int argc, char ** argv) {
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
 	}
 
-	// For OBJs with very large bboxes, rendering is bugging out. Fix: Always rescale bbox to 0->1000
-	sl::vector3f newBboxMax = (scene.getAABB()[1] - scene.getAABB()[0]);
-	newBboxMax = 1000.f * (newBboxMax / newBboxMax.dot(newBboxMax)); // Normalize * 1000
-	std::cout << "BBOX: " << newBboxMax << std::endl;
-	scene.setAABB(
-		sl::aabox3f(
-			sl::point3f(0, 0, 0),
-			sl::point3f(newBboxMax[0], newBboxMax[1], newBboxMax[2])
-		)
-	);
-	octree.resizeSceneBbox(scene.getAABB());
+	// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
+	float bboxSize = scene.getAABB()[0].distance_to(scene.getAABB()[1]);
+	float maxBboxSize = 1000000.f;
+	if (bboxSize > maxBboxSize || bboxSize < 0.1) {
+		std::cout << "Normalizing bbox; too small/large: " + std::to_string(bboxSize) + ". Initially: " << scene.getAABB() << std::endl;
+		sl::vector3f newBboxMax = (scene.getAABB()[1] - scene.getAABB()[0]).ok_normalized();
+		newBboxMax = maxBboxSize * newBboxMax; // Normalize * 1000
+		std::cout << "Corrected BBOX: " << newBboxMax << std::endl;
+		scene.setAABB(
+			sl::aabox3f(
+				sl::point3f(0, 0, 0),
+				sl::point3f(newBboxMax[0], newBboxMax[1], newBboxMax[2])
+			)
+		);
+		octree.resizeSceneBbox(scene.getAABB());
+	}
 
 #if 0 // DEBUG TEST
 	if (!octree.checkIntegrity()) {
@@ -196,7 +201,6 @@ int main(int argc, char ** argv) {
 	std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
 	std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
 	std::string sep = sl::pathname_directory_separators();
-	std::string levStr = "_" + std::to_string(nLevels);
 
 	int precisionVal = 1;
 	std::string trimmedInfl = std::to_string(lossyInflation).substr(0, std::to_string(lossyInflation).find(".") + precisionVal + 1);
@@ -208,7 +212,7 @@ int main(int argc, char ** argv) {
 	if (lossy) {
 		EncodedSVDAG svdag2;
 		svdag2.encode(octree);
-		svdag2.save(basePath + levStr + ".svdag");
+		svdag2.save(basePath + ".svdag");
 
         octree.toLossyDag3(lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
 	}
@@ -229,6 +233,9 @@ int main(int argc, char ** argv) {
 		svdag2.save(basePath + "-multi.svdag");
 	}
 
+	EncodedSSVDAG esvdag;
+	if (!multiLevel) esvdag.encode(octree);
+
     if (!multiLevel && !exploitHiddenGeom) {
         octree.toSDAG(false, false);
     }
@@ -245,14 +252,14 @@ int main(int argc, char ** argv) {
     bool saveAll = true;
 
     if (saveAll) {
-		std::string infix = levStr;
+		std::string infix = "";
 		if (lossy)
 			infix += paramStr;
-		svdag.save(basePath + levStr + paramStr + ".svdag");
 
-        svdag.save(basePath + infix+ ".svdag");
+        svdag.save(basePath + infix + ".svdag");
         ussvdag.save(basePath + infix + ".ussvdag");
         ssvdag.save(basePath + infix + ".ssvdag");
+        esvdag.save(basePath + infix + ".esvdag");
 //        psvdag.save(basePath + ".psvdag");
     } else {
         for (int i = 4; i < argc; ++i) {
