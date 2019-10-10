@@ -48,7 +48,7 @@ Camera::Camera(GLFWwindow * win) {
 }
 
 void Camera::scroll_callback(double xoffset, double yoffset) {
-	_walkFactor *= yoffset > 0 ? 1.05 : 0.95;
+	_walkFactor *= yoffset > 0 ? 1.1 : 0.9;
 	printf("Walkfactor: %f\n", _walkFactor);
 }
 
@@ -97,6 +97,11 @@ void Camera::update(bool sticky) {
             return;
         }
 
+		float speedMod = 1;
+		if (glfwGetKey(_glfwWindow, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+			speedMod = 5;
+		}
+
         if (glfwGetKey(_glfwWindow, GLFW_KEY_C) == GLFW_PRESS) {
             printf("Camera POS & TARGET: %.3f %.3f %.3f %.3f %.3f %.3f\n",
                 _cam.pos[0], _cam.pos[1], _cam.pos[2],
@@ -105,28 +110,28 @@ void Camera::update(bool sticky) {
 
         if (glfwGetKey(_glfwWindow, GLFW_KEY_W) == GLFW_PRESS) {
             sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
-            _cam.pos += dir * _walkFactor;
-            _cam.target += dir * _walkFactor;
+            _cam.pos += dir * _walkFactor * speedMod;
+            _cam.target += dir * _walkFactor * speedMod;
             updateMatrices();
         }
         if (glfwGetKey(_glfwWindow, GLFW_KEY_S) == GLFW_PRESS) {
             sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
-            _cam.pos -= dir * _walkFactor;
-            _cam.target -= dir * _walkFactor;
+            _cam.pos -= dir * _walkFactor * speedMod;
+            _cam.target -= dir * _walkFactor * speedMod;
             updateMatrices();
         }
         if (glfwGetKey(_glfwWindow, GLFW_KEY_A) == GLFW_PRESS) {
             sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
             dir = dir.cross(_cam.up);
-            _cam.pos -= dir * _walkFactor;
-            _cam.target -= dir * _walkFactor;
+            _cam.pos -= dir * _walkFactor * speedMod;
+            _cam.target -= dir * _walkFactor * speedMod;
             updateMatrices();
         }
         if (glfwGetKey(_glfwWindow, GLFW_KEY_D) == GLFW_PRESS) {
             sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
             dir = -dir.cross(_cam.up);
-            _cam.pos -= dir * _walkFactor;
-            _cam.target -= dir * _walkFactor;
+            _cam.pos -= dir * _walkFactor * speedMod;
+            _cam.target -= dir * _walkFactor * speedMod;
             updateMatrices();
         }
         if (glfwGetKey(_glfwWindow, GLFW_KEY_Q) == GLFW_PRESS) {
@@ -182,6 +187,7 @@ void Camera::update(bool sticky) {
 			phi += dPhi * _rotFactor;
 			if((theta>0.1 && dTheta<0) || (theta<M_PI-0.1f && dTheta>0))
 				theta += dTheta * _rotFactor;
+
 			if (_cam.coordSyst == Y_UP) {
 				n[0] = _rotRadius * sin(theta) * cos(phi);
 				n[1] = _rotRadius * cos(theta);
@@ -191,7 +197,23 @@ void Camera::update(bool sticky) {
 				n[1] = _rotRadius * sin(theta) * sin(phi);
 				n[2] = _rotRadius * cos(theta);
 			}
-			_cam.pos += n-p;			
+			if (_camController == ORBIT) {
+				_cam.pos += n-p;
+			} else {
+				sl::vector3f dir = (_cam.target - _cam.pos);
+
+				float deltaX = 2.0f * 3.14f / 180.0f * dPhi * _rotFactor * -100.0f;
+				float deltaY = 2.0f * 3.14f / 180.0f * dTheta * _rotFactor * -100.0f;
+
+				sl::rigid_body_map3f rX = sl::linear_map_factory3f::rotation(_cam.up, deltaX);
+
+				sl::vector3f camForward = dir.ok_normalized();
+				sl::vector3f camRight = _cam.up.cross(camForward);
+				sl::rigid_body_map3f rY = sl::linear_map_factory3f::rotation(camRight, deltaY);
+				
+				_cam.target = _cam.pos + rX * rY * dir;
+				updateMatrices();
+			}
 		}
 		break;
 	case ZOOMING:

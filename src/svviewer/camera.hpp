@@ -74,6 +74,16 @@ public:
 	inline void setPanFactor(float pf) { _panFactor = pf; }
 	inline void setWalkFactor(float wf) { _walkFactor = wf; }
 	inline float getWalkFactor() { return _walkFactor; }
+	inline bool isUsingOrbitController() { return _camController == ORBIT; }
+	inline void toggleCamController() {
+		_camController = isUsingOrbitController() ? FIRST_PERSON : ORBIT;
+		if (isUsingOrbitController()) {
+			sl::vector3f dir = (_cam.target - _cam.pos).ok_normalized();
+			_rotRadius = _walkFactor * 100.0f;
+			_cam.target = _cam.pos + dir * _rotRadius;
+            updateMatrices();
+		}
+	}
 
 	inline sl::projective_map3f getProjMatrix() { return _projMatrix; }
 	inline sl::rigid_body_map3f getViewMatrix() { return _viewMatrix; }
@@ -105,6 +115,11 @@ private:
 		PANNING
 	} TGesture;
 
+	typedef enum {
+		ORBIT,
+		FIRST_PERSON
+	} TCamController;
+
 	void reset();
 
 	sl::rigid_body_map3f _viewMatrix, _viewMatrixInv;
@@ -117,6 +132,7 @@ private:
 	float _zoomFactor, _rotFactor, _panFactor, _walkFactor;
 	TState _state{ FREE };
 	TGesture _gestureState{ NONE };
+	TCamController _camController{ORBIT};
 	WalkThrough _walkthrough;
 	int _wtInterpol { 1 };
 };

@@ -215,7 +215,7 @@ void EncodedSSVDAG::encode(const GeomOctree & octree) {
 
 	printf("* Encoding to SSVDAG... ");
 
-	if (octree.getState() != GeomOctree::S_SDAG) {
+	if (octree.getState() != GeomOctree::S_SDAG && octree.getState() != GeomOctree::S_DAG) {
 		printf("FAILED! Octree is not in SDAG state\n");
 		return;
 	}

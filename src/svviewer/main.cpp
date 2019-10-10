@@ -82,6 +82,7 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
 	if (key == GLFW_KEY_K) renderer->toggleRandomColors();
 	if (key == GLFW_KEY_L) renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
+	if (key == GLFW_KEY_F) cam->toggleCamController();
 
 	if (key == GLFW_KEY_F1) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::AO);
 	if (key == GLFW_KEY_F2) renderer->selectRenderMode(OctreeDDARenderer::RenderMode::DEPTH);
@@ -193,11 +194,8 @@ bool loadFile(std::string inputFile) {
 		encoded_octree = new EncodedUSSVDAG();
 		if (!encoded_octree->load(inputFile)) incorrectFile = true;
 	}
-	else if (ext == "ssvdag" || ext == "SSVDAG") {
-		encoded_octree = new EncodedSSVDAG();
-		if (!encoded_octree->load(inputFile)) incorrectFile = true;
-	}
-	else if (ext == "psvdag" || ext == "PSVDAG") {
+	else if (ext == "ssvdag" || ext == "SSVDAG"
+		  || ext == "esvdag" || ext == "ESVDAG") {
 		encoded_octree = new EncodedSSVDAG();
 		if (!encoded_octree->load(inputFile)) incorrectFile = true;
 	}
@@ -213,6 +211,7 @@ void handleImgui() {
 	bool beamOptInput = renderer->getUseMinDepthOptimization();
 	bool randomColsInput = renderer->getRandomColors();
 	bool shadowsEnabledInput = renderer->getShadowsEnabled();
+	bool isUsingOrbitController = renderer->getCamera()->isUsingOrbitController();
 	float pixTolInput = renderer->getPixelTolerance();
 	float fovInput = renderer->getFovH();
 	float walkFactorInput = renderer->getCamera()->getWalkFactor();
@@ -270,6 +269,15 @@ void handleImgui() {
             renderer->setPixelTolerance(pixTolInput);
         //if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
         //	renderer->setFovH(fovInput);
+
+
+		ImGui::Text("Camera controller");
+		ImGui::SameLine();
+        if (ImGui::RadioButton("Orbit", isUsingOrbitController))
+            renderer->getCamera()->toggleCamController();
+		ImGui::SameLine();
+		if (ImGui::RadioButton("First person", !isUsingOrbitController))
+            renderer->getCamera()->toggleCamController();
 
         if (ImGui::SliderFloat("Move speed", &walkFactorInput, 0.0f, 4.0f))
             renderer->getCamera()->setWalkFactor(walkFactorInput);
@@ -370,6 +378,8 @@ int main(int argc, char ** argv)
 		60.0f,
 		sceneBBox.diagonal().two_norm() * 0.001f,
 		sceneBBox.diagonal().two_norm() * 10.0f);
+
+	cam->setWalkFactor(sceneBBox.diagonal().two_norm() * 0.001f);
 
 	// Make the window's context current
 	glfwMakeContextCurrent(window);
