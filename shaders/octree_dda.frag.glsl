@@ -678,6 +678,11 @@ void main() {
 	vec3 hitNorm;
 	vec4 result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
 
+
+	// Hit position = camera origin + depth * ray direction
+	vec3 hitPos = r.o + result.x * r.d;
+	const float cellSize = 2. * rootHalfSide / pow(2, result.y);
+
 //	const float localEpsilon = 1E-3f * result.y;
 	
 	if (result.x >= 0) // Intersection!!!
@@ -694,9 +699,6 @@ void main() {
 			// ====Base color, based on depth====
 			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
 
-			// Hit position = camera origin + depth * ray direction
-			vec3 hitPos = r.o + result.x * r.d;
-			const float cellSize = 2. * rootHalfSide / result.y;
 
 			// ====Voxel normal direction====
 //			vec3 localHitPos = hitPos - sceneCenter; // local position, align to grid (through bbox center)
@@ -717,30 +719,35 @@ void main() {
 			// Todo: proper normal derivation can be done by looking at the direction of the previous voxel during traversal
 			// Yes this is much easier, the data is already there, got it from dda_next
 
+			// vec3 smoothNorm = hitNorm;
+			// const int normSamples = 0;
+			// float numNormSamplesHit = 1;
+			// float normSampleRot = 3.14159f * 2.f / float(normSamples);
+			// // Sample multiple times per pixel, in the cone that surrounds the pixel projected into the scene
+			// for (int i = 0; i < normSamples; i++) {
+			// 	vec3 normSample;
+			// 	float rnd = mod(result.x + result.w * 0.01, 1);
+			// 	float rnd2 = 0.5f + rnd * 8;//rnd * 2;//mod(mod(result.x, result.z * rnd), 1);
+			// 	vec2 rayPixOffset = rnd2 * vec2(cos((i + rnd) * normSampleRot), sin((i + rnd) * normSampleRot)) / screenRes;
+			// 	r = computeCameraRay(screenCoords + rayPixOffset);
+			// 	vec2 t_min_max = vec2(result.x - cellSize * 0.5, result.x + cellSize * 0.5);
+			// 	vec4 normSampleRes = trace_ray(r, t_min_max, projectionFactor, normSample);
+			// 	if (normSampleRes.x >= 0) {
+			// 		numNormSamplesHit++;
+			// 		smoothNorm += normSample;
+			// 	}
+			// }
+			// smoothNorm /= numNormSamplesHit;
+			// hitNorm = smoothNorm;
+
 			// ====Diffuse shading====
 			vec3 lightDir = normalize(lightPos - hitPos);
 			t *= 0.5 + 0.5 * max(dot(hitNorm, lightDir), 0);
 
-			// ====Shadow====
-			if (enableShadows) {
-				// Trace ray to light pos
-				const vec3 p = hitPos + hitNorm * cellSize * 0.5f; // center of voxel + half voxel size in dir of normal
-				const vec3 lightToP = p - lightPos;
-				const float lightToPLength = length(lightToP);
-
-				r.o = p;
-				r.d = -normalize(lightToP);
-				vec2 t_min_max = vec2(0, lightToPLength);
-				vec4 shd_result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
-
-				// Light fall-off
-	//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
-	//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
-
-				// Add shadows
-				t = (shd_result.x > 0) ? t / 2.0 : t;
-//				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
-			}
+			// Light fall-off
+			t -= 0.5 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+			// Traversal depth (looks nice without beam opt)
+			// t *=  1. - (result.z / float(maxIters));
 		}
 	
 		color = vec3(t);
@@ -757,16 +764,17 @@ void main() {
 			// Visualize ref count by dividing (sorted) index by num of nodes in level
 			// Todo: Should make this a sperate render mode
 			int hitLev = int(result.y);
-			float levSize = hitLev == LEVELS - 1
-				? textureSize(leafNodes)
-				: levelOffsets[hitLev + 1] - levelOffsets[hitLev];
+			float levSize = 0;
+			if (hitLev >  LEVELS - 3) levSize = textureSize(leafNodes); // leaf nodes
+			else if (hitLev == LEVELS - 3) levSize = textureSize(innerNodes) * 4 - levelOffsets[hitLev]; // lev above leaves
+			else 					  levSize = levelOffsets[hitLev + 1] - levelOffsets[hitLev];
 			float indexInLevel = nodeIndex / levSize;
-			color *= TurboColormap(indexInLevel);
+			color *= TurboColormap(1.0f - indexInLevel - 0.05f);
 #else
 			vec3 randomColor = normalize(vec3(
-			(nodeIndex % 100) / 100.f,
-			((3 * nodeIndex) % 200) / 200.f,
-			((2 * nodeIndex) % 300) / 300.f
+				(nodeIndex % 100) / 100.f,
+				((3 * nodeIndex) % 200) / 200.f,
+				((2 * nodeIndex) % 300) / 300.f
 			));
 			color *= randomColor;
 #endif
@@ -775,6 +783,29 @@ void main() {
 			color.r *= 0.5f;
 			color.g *= 0.5f;
 			color.b = 1.f;
+		}
+
+		// ====Shadow====
+		if (enableShadows) {
+			// Trace ray to light pos
+			const vec3 p = hitPos + hitNorm * cellSize * 0.5f; // center of voxel + half voxel size in dir of normal
+			const vec3 lightToP = p - lightPos;
+			const float lightToPLength = length(lightToP);
+
+			const float sProjFactor = lightToPLength / cellSize;
+
+			r.o = p;
+			r.d = -normalize(lightToP);
+			vec2 t_min_max = vec2(0, lightToPLength);
+			vec4 shd_result = trace_ray(r, t_min_max, sProjFactor, hitNorm);
+
+			// Light fall-off
+//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+
+			// Add shadows
+			color *= (shd_result.x > 0) ? 0.5 : 1;
+//				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
 		}
 	}
 	else {
