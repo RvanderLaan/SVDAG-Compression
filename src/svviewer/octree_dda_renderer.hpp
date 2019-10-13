@@ -143,4 +143,6 @@ protected:
 	float _projectionFactor;
 
 	GLuint generateChildrenIndirectionTex();
+
+	inline OctreeFormat getFormat() { return _octreeFormat; }
 };

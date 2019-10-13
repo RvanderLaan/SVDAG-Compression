@@ -167,7 +167,7 @@ int main(int argc, char ** argv) {
 
 	// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
 	float bboxSize = scene.getAABB()[0].distance_to(scene.getAABB()[1]);
-	float maxBboxSize = 1000000.f;
+	float maxBboxSize = 100000.f;
 	if (bboxSize > maxBboxSize || bboxSize < 0.1) {
 		std::cout << "Normalizing bbox; too small/large: " + std::to_string(bboxSize) + ". Initially: " << scene.getAABB() << std::endl;
 		sl::vector3f newBboxMax = (scene.getAABB()[1] - scene.getAABB()[0]).ok_normalized();
@@ -193,9 +193,6 @@ int main(int argc, char ** argv) {
 
 //	octree.DebugHashing();
 
-
-
-
 	// Prepare for saving file to disk
 	std::string path = sl::pathname_directory(inputFile);
 	std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
@@ -207,16 +204,18 @@ int main(int argc, char ** argv) {
 		
 	std::string paramStr = "-l_" + trimmedInfl + "_" + std::to_string(allowedLossyDiffFactor) + "_" + std::to_string(includedNodeRefCount);
 
-	// svdag.save(basePath + levStr + ".svdag");
+	// Save base SVDAG and ESVDAG in any case
+	EncodedSVDAG svdag2;
+	svdag2.encode(octree);
+	svdag2.save(basePath + ".svdag");
+
+	EncodedSSVDAG esvdag2;
+	esvdag2.encode(octree);
+	esvdag2.save(basePath + ".esvdag");
 
 	if (lossy) {
-		EncodedSVDAG svdag2;
-		svdag2.encode(octree);
-		svdag2.save(basePath + ".svdag");
-
         octree.toLossyDag3(lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
 	}
-
 
 	// Encode conventional SVDAG
 	EncodedSVDAG svdag;

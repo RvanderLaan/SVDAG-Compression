@@ -32,18 +32,40 @@ public:
         }
     };
 
+    // Find only those edges that are in this specific subCluster
+    // NOTE: Cluster needs to be sorted
+    static inline void getClusterEdges(
+        const std::vector<Edge> &subGraph,
+        const std::vector<unsigned int> &cluster,
+        std::vector<Edge> &clusterEdges
+    ) {
+        for (const auto &e : subGraph) {
+            // Todo: This could be quite slow for large clusters. Make an edgeMap again?
+            if (std::binary_search(cluster.begin(), cluster.end(), e.sourceId)
+                && std::binary_search(cluster.begin(), cluster.end(), e.targetId)) {
+                clusterEdges.emplace_back(e);
+            }
+        }
+    }
+
     static inline std::vector<std::vector<unsigned int>> clusterSubgraphs(
             const std::vector<Edge> &edges,
             float inflation,
             int id = 0) {
         const auto subGraphs = findSubGraphs(edges);
-        printf("Found %zu subgraphs of %zu edges. ", subGraphs.size(), edges.size());
+        printf("Found %zu subgraphs out of %zu edges. ", subGraphs.size(), edges.size()); fflush(stdout);
         std::vector<std::vector<unsigned int>> clusters;
+        std::vector<Edge> clusterEdges;
 
         // Threshold of cluster size for when to run MCL or when to just create a cluster of the whole subgraph
         double graphSizeThresholdToCluster = sqrt(edges.size()) / 4.0;
 
+        int stepLogger = (int) round(subGraphs.size() / 10.f);
+        int i = 0;
         for (const auto& subGraph : subGraphs) {
+            if (stepLogger > 0 && (i++ % stepLogger) == 0) {
+                printf("%.0f%%..", round(100.0f * (i / (float) subGraphs.size()))); fflush(stdout);
+            }
             if (subGraph.size() <= graphSizeThresholdToCluster) {
                 // For extremly small clusters, the subgraph is one cluster
                 std::set<unsigned int> clusterSet;
@@ -52,7 +74,7 @@ public:
                     clusterSet.emplace(e.targetId);
                 }
                 std::vector<unsigned int> clusterVec(clusterSet.begin(), clusterSet.end());
-
+                
                 // Set cluster center at index 0
                 setClusterCenterToBeginning(subGraph, clusterVec);
 
@@ -64,16 +86,8 @@ public:
                 // Set cluster center at index 0 for all subgraphs
                 for (auto &cluster : subClusters) {
                     // Find only those edges that are in this specific subCluster
-                    std::vector<Edge> clusterEdges;
-                    for (const auto &e : subGraph) {
-                        // Todo: This could be quite slow for large clusters. Make an edgeMap again?
-                        if (std::find(cluster.begin(), cluster.end(), e.sourceId) != cluster.end()
-                         && std::find(cluster.begin(), cluster.end(), e.targetId) != cluster.end()) {
-                            clusterEdges.emplace_back(e);
-                        }
-                    }
-//                    printf("Num edges: %zu, number of nodes: %zu, all graph edges: %zu", clusterEdges.size(), cluster.size(), subGraph.size());
-
+                    clusterEdges.clear();
+                    getClusterEdges(subGraph, cluster, clusterEdges);
                     setClusterCenterToBeginning(clusterEdges, cluster);
                 }
 
@@ -144,6 +158,17 @@ public:
         cluster[maxIndex] = tmp;
     }
 
+    static inline void writeEdgesToFile(const std::vector<Edge> &edges, std::string fname) {
+        std::ofstream edgesFile(fname, std::ios::out | std::ios::trunc);
+
+        for (auto const& edge : edges) {
+            edgesFile << std::to_string(edge.sourceId) << " "
+                   << std::to_string(edge.targetId) << " "
+                   << edge.weight << "\n"; stdout;
+        }
+        edgesFile.close();
+    }
+
     static inline std::vector<std::vector<unsigned int>> MCL(
             const std::vector<Edge> &edges,
             float inflation,
@@ -182,14 +207,16 @@ public:
             std::stringstream linestream(line);
             std::string substr;
 
-            clusters.emplace_back(std::vector<unsigned int>());
+            std::vector<unsigned int> cluster;
 
             // mcl uses tab, hipmcl uses space
             const char delim = '\t'; // ' '
 
             while (std::getline(linestream, substr, delim)) {
-                clusters[clusters.size() - 1].emplace_back(std::stoul(substr));
+                cluster.emplace_back(std::stoul(substr));
             }
+            std::sort(cluster.begin(), cluster.end());
+            clusters.emplace_back(cluster);
         }
         clusterFile.close();
 
@@ -354,3 +381,68 @@ public:
 };
 
 
+
+     // Batch small subgraphs together to avoid IO overhead of writing/reading to/from disk
+        // int maxBatchSize = 50000;
+
+        // std::vector<Edge> batch;
+        // batch.reserve(maxBatchSize);
+
+        /**
+         * Flow:
+         * 1. Write to file 1
+         * 2. For every graph
+         * 2.1. Write to file 2 in thread
+         * 2.2. Cluster file 1
+         * 2.3. Wait for both...
+         * 2.4. Write to file 1
+         * 2.5. Cluster file 2
+         * 2.6. Wait for both...
+         */
+
+        // int stepLogger = subGraphs.size() / 10;
+        // int i = 0;
+        // for (const auto& subGraph : subGraphs) {
+        //     if ((i++ % stepLogger) == 0) {
+        //         printf("%.0f%%..", round(100.0f * (i / (float) subGraphs.size()))); fflush(stdout);
+        //     }
+        //     // Todo: For extremly small clusters, the subgraph is one cluster? Needs experiment
+        //     // if (subGraph.size() <= graphSizeThresholdToCluster) {
+        //     if (subGraph.size() > maxBatchSize) {
+        //         auto subClusters = MCL(subGraph, inflation, id);
+        //         // Set cluster center at index 0 for all subgraphs
+        //         for (auto &cluster : subClusters) {
+        //             clusterEdges.clear();
+        //             getClusterEdges(subGraph, cluster, clusterEdges);
+        //             setClusterCenterToBeginning(clusterEdges, cluster);
+        //         }
+        //         clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+
+        //     } else if (batch.size() + subGraph.size() < maxBatchSize) {
+        //         // Add subgraph to batch if it fits
+        //         batch.insert(batch.end(), subGraph.begin(), subGraph.end());
+        //     } else {
+        //         // Cluster batch if it is full
+        //         auto subClusters = MCL(batch, inflation, id);
+        //         for (auto &cluster : subClusters) {
+        //             clusterEdges.clear();
+        //             getClusterEdges(batch, cluster, clusterEdges);
+        //             setClusterCenterToBeginning(clusterEdges, cluster);
+        //         }
+        //         clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+
+        //         // Add current subGraph back into the batch
+        //         batch.clear();
+        //         batch.insert(batch.end(), subGraph.begin(), subGraph.end());
+        //     }
+        // }
+        // // Cluster what remains in the batch
+        // if (batch.size() > 0) {
+        //     auto subClusters = MCL(batch, inflation, id);
+        //     for (auto &cluster : subClusters) {
+        //         clusterEdges.clear();
+        //         getClusterEdges(batch, cluster, clusterEdges);
+        //         setClusterCenterToBeginning(clusterEdges, cluster);
+        //     }
+        //     clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+        // }

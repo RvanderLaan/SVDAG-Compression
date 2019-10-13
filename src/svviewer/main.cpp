@@ -236,7 +236,6 @@ void handleImgui() {
         ImGui::SameLine();
         doLoadFile1 = doLoadFile1 || ImGui::Button("Load file slot 1");
         if (doLoadFile1) {
-            // Todo: Delete previous encoded_octree?
             bool error = loadFile(filenameInput);
             if (!error) {
                 renderer->setEncodedOctree(encoded_octree);

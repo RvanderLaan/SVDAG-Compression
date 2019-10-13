@@ -173,6 +173,17 @@ void OctreeDDARenderer::uploadData(bool init) {
 			glBindTexture(GL_TEXTURE_BUFFER, 0);
 			glBindBuffer(GL_TEXTURE_BUFFER, 0);
 		}
+		glUniform1uiv(
+			_program[_selectedRenderMode].getUniformID("levelOffsets"),
+			sdag4->getNLevelOffsets(),
+			(GLuint *)sdag4->getLevelOffsetsPtr());
+		
+		glUseProgram(_program[DEPTH].getGLProgram());
+		glUniform1uiv(
+			_program[DEPTH].getUniformID("levelOffsets"),
+			sdag4->getNLevelOffsets(),
+			(GLuint *)sdag4->getLevelOffsetsPtr());
+		
 	}
 
 	if (!init) {
