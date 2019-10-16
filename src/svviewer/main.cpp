@@ -80,7 +80,8 @@ void optionsKeyCallback(GLFWwindow *win, int key, int scancode, int action, int 
 	if (key == GLFW_KEY_6) renderer->incPixelTolerance();
 	if (key == GLFW_KEY_R) renderer->nextViewerRenderMode();
 	if (key == GLFW_KEY_O) renderer->toggleUseMinDepthOptimization();
-	if (key == GLFW_KEY_K) renderer->toggleRandomColors();
+	if (key == GLFW_KEY_K && mods == 0) renderer->toggleRandomColors();
+	if (key == GLFW_KEY_K && mods == GLFW_MOD_CONTROL) renderer->toggleFreqColors();
 	if (key == GLFW_KEY_L) renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
 	if (key == GLFW_KEY_F) cam->toggleCamController();
 
@@ -209,6 +210,7 @@ void handleImgui() {
 	int drawLevelInput = renderer->getDrawLevel();
 	int maxItersInput = renderer->getGPUTraversalMaxIters();
 	bool beamOptInput = renderer->getUseMinDepthOptimization();
+	bool randomFreqInput = renderer->getFreqColors();
 	bool randomColsInput = renderer->getRandomColors();
 	bool shadowsEnabledInput = renderer->getShadowsEnabled();
 	bool isUsingOrbitController = renderer->getCamera()->isUsingOrbitController();
@@ -258,14 +260,16 @@ void handleImgui() {
             renderer->setDrawLevel(drawLevelInput);
         if (ImGui::SliderInt("Max trav iters", &maxItersInput, 1, 500))
             renderer->setGPUTraversalMaxIters(maxItersInput);
+        if (ImGui::SliderFloat("Pixel tolerance", &pixTolInput, 0.0f, 4.0f))
+            renderer->setPixelTolerance(pixTolInput);
         if (ImGui::Checkbox("Beam optimization", &beamOptInput))
             renderer->toggleUseMinDepthOptimization();
+		if (ImGui::Checkbox("Frequency colors (ESVDAG/SSVDAG only)", &randomFreqInput))
+            renderer->toggleFreqColors();
         if (ImGui::Checkbox("Random colors", &randomColsInput))
             renderer->toggleRandomColors();
 		if (ImGui::Checkbox("Shadows enabled (pretty render mode)", &shadowsEnabledInput))
 			renderer->toggleShadowsEnabled();
-        if (ImGui::SliderFloat("Pixel tolerance", &pixTolInput, 0.0f, 4.0f))
-            renderer->setPixelTolerance(pixTolInput);
         //if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
         //	renderer->setFovH(fovInput);
 

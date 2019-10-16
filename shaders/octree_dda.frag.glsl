@@ -78,6 +78,10 @@ uniform int numAORays;
 uniform float lengthAORays;
 #endif
 
+#if (VIEWER_MODE && (SSVDAG || USSVDAG))
+uniform bool freqColors;
+#endif
+
 #if (VIEWER_MODE || DEPTH_MODE)
 uniform sampler2D minDepthTex;
 uniform bool useMinDepthTex;
@@ -747,20 +751,22 @@ void main() {
 			// Light fall-off
 			t -= 0.5 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
 			// Traversal depth (looks nice without beam opt)
-			// t *=  1. - (result.z / float(maxIters));
+			t *=  1. - (result.z / float(maxIters));
 		}
 	
 		color = vec3(t);
 //		color = TurboColormap(t);
 //		color = hitNorm * 0.5 + vec3(0.5);
 
-		// Assign random colors based on the index of a node
-		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
-//			color *= randomColor(uint(result.w));
-			uint nodeIndex = uint(result.w);
-
-
+		uint nodeIndex = uint(result.w);
+		if (nodeIndex == selectedVoxelIndex) {
+			// Highlight selected voxel index with blue
+			color.r *= 0.5f;
+			color.g *= 0.5f;
+			color.b = 1.f;
+		}
 #if (SSVDAG || USSVDAG)
+		else if (freqColors) {
 			// Visualize ref count by dividing (sorted) index by num of nodes in level
 			// Todo: Should make this a sperate render mode
 			int hitLev = int(result.y);
@@ -770,20 +776,19 @@ void main() {
 			else 					  levSize = levelOffsets[hitLev + 1] - levelOffsets[hitLev];
 			float indexInLevel = nodeIndex / levSize;
 			color *= TurboColormap(1.0f - indexInLevel - 0.05f);
-#else
+		}
+#endif
+		// Assign random colors based on the index of a node
+		else if (randomColors) {
+//			color *= randomColor(uint(result.w));
+
 			vec3 randomColor = normalize(vec3(
 				(nodeIndex % 100) / 100.f,
 				((3 * nodeIndex) % 200) / 200.f,
 				((2 * nodeIndex) % 300) / 300.f
 			));
 			color *= randomColor;
-#endif
-		} else if (result.w == selectedVoxelIndex) {
-			// Highlight selected voxel index with blue
-			color.r *= 0.5f;
-			color.g *= 0.5f;
-			color.b = 1.f;
-		}
+		} 
 
 		// ====Shadow====
 		if (enableShadows) {

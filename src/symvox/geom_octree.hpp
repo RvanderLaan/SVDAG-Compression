@@ -44,14 +44,15 @@ public:
 			nTotalVoxels(0),
 			nNodesSVO(0), nNodesDAG(0), nNodesSDAG(0),
 			nNodesLastLevSVO(0), nNodesLastLevDAG(0), nNodesLastLevSDAG(0),
-			simulatedEncodedSVOSize(0), memFootprint(0) {}
+			simulatedEncodedSVOSize(0), memFootprint(0),
+			totalLossyVoxelDifference(0), nClusteredNodes(0), nClusters(0), nEdges(0) {}
 		size_t nTotalVoxels;
 		size_t nNodesSVO, nNodesDAG, nNodesSDAG;
 		size_t nNodesLastLevSVO, nNodesLastLevDAG, nNodesLastLevSDAG;
 		size_t simulatedEncodedSVOSize;
 		size_t memFootprint;
-		sl::time_duration buildSVOTime, buildDAGTime, toDAGTime, toLSVDAGTime, toSDAGTime;
-
+		sl::time_duration buildSVOTime, buildDAGTime, toDAGTime, toLSVDAGTime, toSDAGTime, lHashing, lSimNodes, lClustering;
+		size_t totalLossyVoxelDifference, nClusteredNodes, nClusters, nEdges;
 	};
 
 public:  //////// Octree Node
@@ -124,9 +125,7 @@ public:
     void toHiddenGeometryDAG();
 
 	// Extensions
-    void toLossyDAG(bool internalCall = false);
-    void toLossyDAG2(float qualityPct);
-    void toLossyDag3(float lossyInflation, int allowedLossyDiffFactor, int includedNodeRefCount);
+    void toLossyDag(float lossyInflation, float allowedLossyDiffFactor, int includedNodeRefCount);
     unsigned int mergeAcrossAllLevels();
     void symMergeAcrossAllLevels();
 
@@ -154,7 +153,7 @@ private: // Internal tools
     unsigned int findAllSymDuplicateSubtrees();
 
     void diffSubtrees(unsigned int levA, unsigned int levB, const Node &nA, const Node &nB,
-                 const unsigned int abortThreshold, unsigned int &accumulator);
+                 const unsigned int abortThreshold, unsigned int &accumulator, unsigned int &numLeaves);
 
     uint64_t computeNodeHash(const Node &node, unsigned int depth, std::vector<uint64_t> &childHashes);
 

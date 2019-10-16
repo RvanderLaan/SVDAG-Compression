@@ -93,7 +93,9 @@ void Camera::update(bool sticky) {
                 _initCam.coordSyst = Z_UP;
                 _initCam.up = sl::vector3f(0, 0, 1);
             }
-            reset();
+			if (_initCam.pos.distance_to(_cam.pos) > _walkFactor) {
+            	reset();
+			}
             return;
         }
 
@@ -204,6 +206,10 @@ void Camera::update(bool sticky) {
 
 				float deltaX = 2.0f * 3.14f / 180.0f * dPhi * _rotFactor * -100.0f;
 				float deltaY = 2.0f * 3.14f / 180.0f * dTheta * _rotFactor * -100.0f;
+
+				if (_cam.coordSyst == Z_UP) {
+					deltaX *= -1;
+				}
 
 				sl::rigid_body_map3f rX = sl::linear_map_factory3f::rotation(_cam.up, deltaX);
 

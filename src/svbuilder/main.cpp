@@ -100,7 +100,7 @@ int main(int argc, char ** argv) {
 	bool exploitHiddenGeom = false;
 
 	float lossyInflation = 2.0;
-	int allowedLossyDiffFactor = 2;
+	float allowedLossyDiffFactor = 0.99;
 	int includedNodeRefCount = 1;
 
 	for (int i = 4; i < argc; ++i) {
@@ -114,8 +114,8 @@ int main(int argc, char ** argv) {
 				}
 		        if (i + 2 < argc) {
 					// Clamped between 1 and 8, as >8 diff would mean ???
-					allowedLossyDiffFactor = std::stoi(argv[i + 2]);
-					allowedLossyDiffFactor = std::min(100, std::max(1, allowedLossyDiffFactor));
+					allowedLossyDiffFactor = std::stof(argv[i + 2]);
+					allowedLossyDiffFactor = std::min(1.0f, std::max(0.1f, allowedLossyDiffFactor));
 				}
 		        if (i + 3 < argc) {
 					includedNodeRefCount = std::stoi(argv[i + 3]);
@@ -124,7 +124,7 @@ int main(int argc, char ** argv) {
 		    } catch(std::invalid_argument&) {
 		        printf(" --- WARNING: Could not parse lossy compression parameters, using defaults. ---\n");
 		    }
-			printf("Lossy parameters: inflation %.1f, allowed diff factor: %i, included node ref count: %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
+			printf("Lossy parameters: inflation %.1f, allowed diff factor: %.2f, included node ref count: %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
 			lossy = true;
 		}
 		else if (arg == "--cross-level-merging" || arg == "-c")
@@ -201,8 +201,9 @@ int main(int argc, char ** argv) {
 
 	int precisionVal = 1;
 	std::string trimmedInfl = std::to_string(lossyInflation).substr(0, std::to_string(lossyInflation).find(".") + precisionVal + 1);
+	std::string trimmedLossFact = std::to_string(allowedLossyDiffFactor).substr(0, std::to_string(allowedLossyDiffFactor).find(".") + precisionVal + 2);
 		
-	std::string paramStr = "-l_" + trimmedInfl + "_" + std::to_string(allowedLossyDiffFactor) + "_" + std::to_string(includedNodeRefCount);
+	std::string paramStr = "-l_" + trimmedInfl + "_" + trimmedLossFact + "_" + std::to_string(includedNodeRefCount);
 
 	// Save base SVDAG and ESVDAG in any case
 	EncodedSVDAG svdag2;
@@ -214,7 +215,9 @@ int main(int argc, char ** argv) {
 	esvdag2.save(basePath + ".esvdag");
 
 	if (lossy) {
-        octree.toLossyDag3(lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
+		auto origDagTime = octree.getStats().toDAGTime; // since toDag is also called on the lossy dag, restore original dag time
+        octree.toLossyDag(lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
+		octree.getStats().toDAGTime = origDagTime;
 	}
 
 	// Encode conventional SVDAG
@@ -295,7 +298,8 @@ int main(int argc, char ** argv) {
 	printf("SDAG Nodes: %s\t(%zu)\n", sl::human_readable_quantity(stats.nNodesSDAG).c_str(), stats.nNodesSDAG);
 	printf("Pointerless SVO    : %s\t(%.3f bits/vox)\n", sl::human_readable_size(stats.nNodesSVO).c_str(), (8 * stats.nNodesSVO) / float(octree.getNVoxels()));
 	if(levelStep == 0) printf("Encoded SVO       : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svo.getDataSize()).c_str(), (8 * svo.getDataSize()) / float(octree.getNVoxels()));
-	printf("Encoded SVDAG      : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svdag.getDataSize()).c_str(),   (8 * svdag.getDataSize())   / float(octree.getNVoxels()));
+	printf("Encoded SVDAG      : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svdag.getDataSize()).c_str(),  (8 * svdag.getDataSize())   / float(octree.getNVoxels()));
+	printf("Encoded ESVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(esvdag.getDataSize()).c_str(), (8 * esvdag.getDataSize()) / float(octree.getNVoxels()));
 	printf("Encoded USSVDAG    : %s\t(%.3f bits/vox)\n", sl::human_readable_size(ussvdag.getDataSize()).c_str(), (8 * ussvdag.getDataSize()) / float(octree.getNVoxels()));
 	printf("Encoded SSVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(ssvdag.getDataSize()).c_str(), (8 * ssvdag.getDataSize()) / float(octree.getNVoxels()));
 	// printf("Encoded PSVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(psvdag.getDataSize()).c_str(), (8 * psvdag.getDataSize()) / float(octree.getNVoxels()));
@@ -307,8 +311,31 @@ int main(int argc, char ** argv) {
 	printf("Total time         : %s\n", sl::human_readable_duration(totalTime).c_str());
 	printf("===================================================================\n\n");
 
+	FILE *baseStdout = stdout;
+	// Print to console and to stats file
+	for (int i = 0; i < 2; i++) {
+		if (i == 1) {
+			stdout = fopen("stats.txt", "a");
+		}
+		printf("%s, %d, lossy: %d\n", baseName.c_str(), nLevels, lossy);
+		printf("#Voxels, %zu\n", stats.nTotalVoxels);
+		printf(", SVDAG, ESVDAG, SSVDAG, SVO\n");
+		printf("#nodes, %zu, '', %zu, %zu\n", stats.nNodesDAG, stats.nNodesSDAG, stats.nNodesSVO);
+		printf("memory (bytes), %zu, %zu, %zu, %zu\n", svdag.getDataSize(), esvdag.getDataSize(), ssvdag.getDataSize(), stats.nNodesSVO);
+		
+		if (lossy) {
+			printf("Construction times:\n");
+			printf(",SVDAG, LSVDAG, Total,Hashing, SimNodes, Clustering\n");
+			printf("time (ms), %zu, %zu, %zu, %zu, %zu, %zu\n", stats.toDAGTime.as_milliseconds(), stats.toLSVDAGTime.as_milliseconds(), totalTime.as_milliseconds(), stats.lHashing.as_milliseconds(), stats.lSimNodes.as_milliseconds(), stats.lClustering.as_milliseconds());
 
-
+			printf("Lossy stats, %.2f, %.2f, %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
+			printf("TotalVoxDifference, #NodesIn, #ClustersOut, #edges\n");
+			printf("%zu, %zu, %zu, %zu\n", stats.totalLossyVoxelDifference, stats.nClusteredNodes, stats.nClusters, stats.nEdges);
+		}
+		printf("\n\n");
+	}
+	fclose(stdout);
+	stdout = baseStdout;
 
 	return 0;
 }
