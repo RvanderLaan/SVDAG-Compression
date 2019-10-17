@@ -839,9 +839,9 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
     std::vector<std::vector<uint64_t>> hashes(_levels);
     std::map<id_t, bool> uniqueNodesChecker;
+    std::map<id_t, bool> prevClusterReps, curClusterReps;
 
     sl::time_point ts = sl::real_time_clock::now();
-
 
     // For every level, starting at two levels above the leaves...
     for (unsigned int lev = _levels - 2; lev > 0; --lev) {
@@ -904,7 +904,19 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
             // Use pre-computed hash to avoid cascade of lossy error
             uint64_t nAKey = hashes[lev][idA];
 
-            // Todo: don't merge nodes that are a parent of a cluster representative
+            // Don't merge nodes that are a parent of a cluster representative
+            bool isParentOfClusterRep = false;
+            for (int c = 0; c < 8; ++c) {
+                if (!isParentOfClusterRep && n.existsChild(c)) {
+#pragma omp critical
+                    if (prevClusterReps.find(n.children[c]) != prevClusterReps.end()) {
+                        isParentOfClusterRep = true;
+                        curClusterReps[idA] = true; // this node is an indirect parent of a cluster rep
+                    }
+                }
+            }
+            if (isParentOfClusterRep) continue;
+
             if (lev == _levels - 2) {
                 for (int i = 0; i < 64; ++i) {
                     uint64_t nAKeyMod = nAKey ^(1UL << i);
@@ -1005,6 +1017,8 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
             id_t repId = clusters[c][0];
             id_t repIdNew = uniqueNodes.size();
 
+            curClusterReps[repIdNew] = true;
+
             // TODO: Merge cluster representative with node that has > includedNodeRefCount ref count, if similar one exists
             /*
             const Node &n = _data[lev][repId];
@@ -1052,6 +1066,8 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
         _data[lev] = uniqueNodes; // Replace all SVO nodes with the unique DAG nodes in this level
         _data[lev].shrink_to_fit();
         _nNodes += _data[lev].size();
+        curClusterReps.swap(prevClusterReps);
+        curClusterReps.clear();
 
         /////////////////////////////////
         //// Update all pointers in the level above
