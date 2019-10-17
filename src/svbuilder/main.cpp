@@ -201,7 +201,7 @@ int main(int argc, char ** argv) {
 
 	int precisionVal = 1;
 	std::string trimmedInfl = std::to_string(lossyInflation).substr(0, std::to_string(lossyInflation).find(".") + precisionVal + 1);
-	std::string trimmedLossFact = std::to_string(allowedLossyDiffFactor).substr(0, std::to_string(allowedLossyDiffFactor).find(".") + precisionVal + 2);
+	std::string trimmedLossFact = std::to_string(allowedLossyDiffFactor).substr(0, std::to_string(allowedLossyDiffFactor).find(".") + precisionVal + 3);
 		
 	std::string paramStr = "-l_" + trimmedInfl + "_" + trimmedLossFact + "_" + std::to_string(includedNodeRefCount);
 
@@ -328,7 +328,7 @@ int main(int argc, char ** argv) {
 			printf(",SVDAG, LSVDAG, Total,Hashing, SimNodes, Clustering\n");
 			printf("time (ms), %zu, %zu, %zu, %zu, %zu, %zu\n", stats.toDAGTime.as_milliseconds(), stats.toLSVDAGTime.as_milliseconds(), totalTime.as_milliseconds(), stats.lHashing.as_milliseconds(), stats.lSimNodes.as_milliseconds(), stats.lClustering.as_milliseconds());
 
-			printf("Lossy stats, %.2f, %.2f, %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
+			printf("Lossy stats, %.2f, %.3f, %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
 			printf("TotalVoxDifference, #NodesIn, #ClustersOut, #edges\n");
 			printf("%zu, %zu, %zu, %zu\n", stats.totalLossyVoxelDifference, stats.nClusteredNodes, stats.nClusters, stats.nEdges);
 		}

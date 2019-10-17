@@ -52,13 +52,14 @@ public:
             const std::vector<Edge> &edges,
             float inflation,
             int id = 0) {
+        printf("Splitting %zu edges into subgraphs... ", edges.size()); fflush(stdout);
         const auto subGraphs = findSubGraphs(edges);
-        printf("Found %zu subgraphs out of %zu edges. ", subGraphs.size(), edges.size()); fflush(stdout);
+        printf("Found %zu subgraphs. ", subGraphs.size()); fflush(stdout);
         std::vector<std::vector<unsigned int>> clusters;
         std::vector<Edge> clusterEdges;
 
         // Threshold of cluster size for when to run MCL or when to just create a cluster of the whole subgraph
-        double graphSizeThresholdToCluster = sqrt(edges.size()) / 4.0;
+        double graphSizeThresholdToCluster = std::max(sqrt(edges.size()) / 4.0, 2.0);
 
         int stepLogger = (int) round(subGraphs.size() / 10.f);
         int i = 0;

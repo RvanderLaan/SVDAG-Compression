@@ -469,6 +469,32 @@ std::vector<std::vector<unsigned int>> GeomOctree::sortByRefCount() {
         _data[lev] = sortedNodes;
     }
     printf(" Done!\n");
+
+#if 1
+    printf("DEBUG: Check how often nodes are referenced [direct ref count]\n");
+    unsigned int histSize = 10; // num of ref counts to keep track of
+
+    // csv header
+    printf("Level");
+    for (unsigned int i = 1; i < histSize; ++i) {
+        printf(", %u", i);
+    }
+    printf(", Total nodes\n");
+
+    for (unsigned int lev = 1; lev < _levels; ++lev) {
+//        printf("- LEVEL %u, total nodes: %zu\n", lev, _data[lev].size());
+        std::vector<unsigned int> hist(histSize);
+        for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
+            hist[std::min(refCounts[lev][nodeIndex], (unsigned int) (histSize - 1))] += 1;
+        }
+        printf("%u", lev);
+        for (unsigned int i = 1; i < histSize; ++i) {
+            printf(", %u", hist[i]);
+        }
+        printf(", %zu\n", _data[lev].size());
+    }
+#endif
+
     return refCounts;
 }
 
@@ -963,8 +989,14 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
 
                         // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
                         // Todo: Difference is currently linearly converted to similarity. Could also try 1 / diff
-                        float sim = 1.0f - ((float) diff / (maxDiff + 1.0f));
-                        edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, sim});
+                        float sim = 1.0f / std::sqrt(diff); //- ((float) diff / (maxDiff + 1.0f));
+
+                        // Normalize similarity, so that a max diff is at weight 0 and 1 diff is at weight 1
+                        const float minSim = 1.0f / std::sqrt(maxDiff);
+                        float normSim = (1.0f - minSim / sim) / (1.0f - minSim);
+                        // sim *= 
+
+                        edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, normSim});
                         uniqueNodesChecker[idA] = false;
                         uniqueNodesChecker[idB] = false;
                     }
@@ -1092,7 +1124,9 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
 
     printf("OK! [%s]\n", sl::human_readable_duration(_stats.toLSVDAGTime).c_str());
 
+#if 1
     this->sortByEffectiveRefCount(); // only for getting new ref counts
+#endif
 
     this->toDAG(false); // filter out new identical nodes (small probability, but might as well check)
 
