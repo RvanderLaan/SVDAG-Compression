@@ -45,14 +45,14 @@ public:
 			nNodesSVO(0), nNodesDAG(0), nNodesSDAG(0),
 			nNodesLastLevSVO(0), nNodesLastLevDAG(0), nNodesLastLevSDAG(0),
 			simulatedEncodedSVOSize(0), memFootprint(0),
-			totalLossyVoxelDifference(0), nClusteredNodes(0), nClusters(0), nEdges(0) {}
+			totalLossyVoxelDifference(0), nClusteredNodes(0), nClusters(0), nEdges(0), nCrossLevelMerged(0) {}
 		size_t nTotalVoxels;
 		size_t nNodesSVO, nNodesDAG, nNodesSDAG;
 		size_t nNodesLastLevSVO, nNodesLastLevDAG, nNodesLastLevSDAG;
 		size_t simulatedEncodedSVOSize;
 		size_t memFootprint;
-		sl::time_duration buildSVOTime, buildDAGTime, toDAGTime, toLSVDAGTime, toSDAGTime, lHashing, lSimNodes, lClustering;
-		size_t totalLossyVoxelDifference, nClusteredNodes, nClusters, nEdges;
+		sl::time_duration buildSVOTime, buildDAGTime, toDAGTime, toLSVDAGTime, toSDAGTime, lHashing, lSimNodes, lClustering, crossMergeTime;
+		size_t totalLossyVoxelDifference, nClusteredNodes, nClusters, nEdges, nCrossLevelMerged;
 	};
 
 public:  //////// Octree Node
@@ -165,7 +165,7 @@ private: // Internal tools
             unsigned int levEnd);
 
     inline void buildMultiMap(unsigned int depth, std::vector<std::multimap<uint64_t, id_t>> &matchMaps, std::vector<std::vector<uint64_t>> &hashes) {
-        this->buildMultiMap(depth, matchMaps, hashes, 0, _levels);
+        this->buildMultiMap(depth, matchMaps, hashes, 1, _levels);
     };
 
     uint64_t computeNodeHashBotUp(const Node &node, const unsigned int lev, const std::vector<std::vector<uint64_t>> &hashes,

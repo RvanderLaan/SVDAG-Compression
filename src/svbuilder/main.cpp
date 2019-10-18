@@ -100,7 +100,7 @@ int main(int argc, char ** argv) {
 	bool exploitHiddenGeom = false;
 
 	float lossyInflation = 2.0;
-	float allowedLossyDiffFactor = 2.0;
+	float allowedLossyDiffFactor = 1.0;
 	int includedNodeRefCount = 1;
 
 	for (int i = 4; i < argc; ++i) {
@@ -325,12 +325,22 @@ int main(int argc, char ** argv) {
 		
 		if (lossy) {
 			printf("Construction times:\n");
-			printf(",SVDAG, LSVDAG, Total,Hashing, SimNodes, Clustering\n");
+			printf(",SVDAG, LSVDAG, Total, Hashing, SimNodes, Clustering\n");
 			printf("time (ms), %zu, %zu, %zu, %zu, %zu, %zu\n", stats.toDAGTime.as_milliseconds(), stats.toLSVDAGTime.as_milliseconds(), totalTime.as_milliseconds(), stats.lHashing.as_milliseconds(), stats.lSimNodes.as_milliseconds(), stats.lClustering.as_milliseconds());
 
 			printf("Lossy stats, %.2f, %.2f, %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
 			printf("TotalVoxDifference, #NodesIn, #ClustersOut, #edges\n");
 			printf("%zu, %zu, %zu, %zu\n", stats.totalLossyVoxelDifference, stats.nClusteredNodes, stats.nClusters, stats.nEdges);
+		} else if (multiLevel) {
+			printf("Construction times:\n");
+			printf(",SVDAG, Total, Cross-level\n");
+			printf("time (ms), %zu, %zu, %zu\n", stats.toDAGTime.as_milliseconds(), totalTime.as_milliseconds(), stats.crossMergeTime.as_milliseconds());
+
+			printf("Cross-level nodes eliminated:, %zu", stats.nCrossLevelMerged);
+		}else {
+			printf("Construction times:\n");
+			printf(",SVDAG, Total\n");
+			printf("time (ms), %zu, %zu\n", stats.toDAGTime.as_milliseconds(), totalTime.as_milliseconds());
 		}
 		printf("\n\n");
 	}

@@ -57,9 +57,12 @@ uint64_t GeomOctree::computeNodeHash(const GeomOctree::Node &node, unsigned int 
             uint64_t childHash = origKeyHash << (c + 1u); // add some pseudo randomness when no child is at index c
 
             if (node.existsChildPointer(c)) {
-//                childHash = hash64(computeNodeHash(child, depth - 1));
-                // TODO: reuse previous hash
-                childHash = childHashes[node.children[c]];
+                // reuse previous hash if available
+                if (childHashes.empty()) {
+                    childHash = hash64(computeNodeHash(child, depth - 1, childHashes));
+                } else {
+                    childHash = hash64(childHashes[node.children[c]]); // todo: hash64 of this or not?
+                }
             }
 
             // bit shift so that identical child hashes don't cancel each other out
@@ -1205,12 +1208,14 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 	};
     */
 
+	auto crossMergeStart = _clock.now();
+
     ///////////////////////////////////////////////////////////////
     /// Building multi-maps for finding potential matches faster //
     ///////////////////////////////////////////////////////////////
     // try out unordered map for performance improvements --->>> nothing changed
     std::vector<std::multimap<uint64_t, id_t>> matchMaps(_levels);
-    std::vector<std::vector<uint64_t>> hashes;
+    std::vector<std::vector<uint64_t>> hashes(_levels);
 
     // Initial depth should depend on total # of levels, 1 seems enough for ~8K, 2 or higher for more
     unsigned int currentMatchDepth = _levels / 2;
@@ -1271,6 +1276,10 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         // Build new match maps for the lowest levels with lower depths, when those nodes do not have subtrees of that depth
         unsigned int maxMatchDepth = _levels - levA - 1;
         if (maxMatchDepth < currentMatchDepth) {
+            // Previous hashes are invalid when changing the depth
+            for (int l = 0; l < _levels; l++) {
+                hashes[l].clear();
+            }
             currentMatchDepth = maxMatchDepth; // currentMatchDepth / 2;
             buildMultiMap(currentMatchDepth, matchMaps, hashes);
         }
@@ -1357,9 +1366,9 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
         printf("Avg matches found per node: %.0f\n", totalMatchCount / float(currentNodesToCheck.size()));
 
-        auto time = _clock.elapsed();
+        _stats.crossMergeTime = crossMergeStart - _clock.now();
 
-        printf(" -> %lu (%.0f%%) [%s]\n", _data[levA].size() - multiLevelCorrespondences[levA].size(), 100 * multiLevelCorrespondences[levA].size() / (float) _data[levA].size(), sl::human_readable_duration(time).c_str());
+        printf(" -> %lu (%.0f%%) [%s]\n", _data[levA].size() - multiLevelCorrespondences[levA].size(), 100 * multiLevelCorrespondences[levA].size() / (float) _data[levA].size(), sl::human_readable_duration(_stats.crossMergeTime).c_str());
 
         // After all nodes for this level have been checked, swap the current and next nodes to check
         currentNodesToCheck.clear();
@@ -1462,7 +1471,7 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
         printf(" - Level %u:   \t%zu subtrees are equal to a subtree higher up. %zu / %i (%.2f%%) nodes of this level have been removed\n", i, multiLevelCorrespondences[i].size(), multiLevelCorrespondences[i].size(), origSize, pct);
     }
     printf("Total number of nodes that was removed: %u / %zu (%.2f%%)\n ", totalElimNodes, prevNNodes, (100 * totalElimNodes / double(prevNNodes)));
-
+    _stats.nCrossLevelMerged = totalElimNodes;
 
 //    printf("Indirect subtree feasibility: How many unique pointers there are to other levels, per level\n");
 //    Todo: Should use this to check how limiting it is to only have pointers to 1 or 2 levels instead of all
