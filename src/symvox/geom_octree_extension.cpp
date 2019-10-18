@@ -875,11 +875,10 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
 		sl::time_duration timeStamp = _clock.elapsed();
 		int stepLogger = (int)round(_data[lev].size() / 10.0f);
 
-        // Todo: AbortThreshold is kinda useless now, was useful when the maxDiff based purely based on level
-        const unsigned int abortThreshold = std::round((float) std::pow(8, _levels - lev) * (1.0 - allowedLossyDiffFactor));
-        printf("\tMax voxels: %u. Abort at %u voxels\n", (unsigned int) std::pow(8, _levels - lev), abortThreshold);
-
         std::vector<cluster::Edge> edges;
+
+        const unsigned int maxAllowedDiff = std::round(std::pow(_levels - lev, 2) * allowedLossyDiffFactor);
+        printf("\tMax voxels: %u. Abort at %u voxels\n", (unsigned int) std::pow(8, _levels - lev), maxAllowedDiff + 1u);
 
         unsigned int numMatchesTotal = 0;
         unsigned int numLeavesTotal = 0;
@@ -974,29 +973,31 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
                     if (idA <= idB) continue; // don't match with itself or with previous nodes (since idB will already have been compared to idA)
                     if (refCounts[lev][idB] > includedNodeRefCount) continue; // Only compare to other 1 ref nodes
 
-                    // Todo: Check how similar this node actually is: Deep comparison (expensive!!)
+                    // Check how similar this node actually is: Deep comparison (expensive!!)
                     const Node &nB = _data[lev][idB];
                     unsigned int diff = 0, numLeaves = 0;
-                    this->diffSubtrees(lev, lev, n, nB, abortThreshold, diff, numLeaves);
+                    this->diffSubtrees(lev, lev, n, nB, maxAllowedDiff + 1, diff, numLeaves);
 
-                    float maxDiff = 8.0 * numLeaves * allowedLossyDiffFactor;
+                    // For subtrees with few leaf nodes, diff should be relatively lower
+                    // --> If difference greater than avg amount of voxels in leaves, abort
+                    float maxAllowedSubtreeDiff = 4.0 * numLeaves; // * allowedLossyDiffFactor;
 #pragma omp critical
-                    if (diff < abortThreshold && diff <= maxDiff) {
+                    if (diff <= maxAllowedDiff && diff < maxAllowedSubtreeDiff) {
 
                         numLeavesTotal += numLeaves;
                         numMatchesTotal++;
                         diffTotal += diff;
 
                         // Weights are similarity, so the inverse of the difference. Difference = dissimilarity
-                        // Todo: Difference is currently linearly converted to similarity. Could also try 1 / diff
-                        float sim = 1.0f / std::sqrt(diff); //- ((float) diff / (maxDiff + 1.0f));
+                        // Todo: Difference is currently linearly converted to similarity. Could also try sqrt or log
+                        float sim = 1.0f - (float) diff / (maxAllowedDiff + 1.0f);
 
                         // Normalize similarity, so that a max diff is at weight 0 and 1 diff is at weight 1
-                        const float minSim = 1.0f / std::sqrt(maxDiff);
-                        float normSim = (1.0f - minSim / sim) / (1.0f - minSim);
+                        // const float minSim = 1.0f / std::sqrt(maxDiff);
+                        // float normSim = (1.0f - minSim / sim) / (1.0f - minSim);
                         // sim *= 
 
-                        edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, normSim});
+                        edges.emplace_back(cluster::Edge{(unsigned int) idA, idB, sim});
                         uniqueNodesChecker[idA] = false;
                         uniqueNodesChecker[idB] = false;
                     }
@@ -1038,8 +1039,8 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
             for (id_t nbID : c) {
                 unsigned int diff = 0, numLeaves = 0;
                 const auto &nB = _data[lev][nbID];
-                this->diffSubtrees(lev, lev, rep, nB, abortThreshold, diff, numLeaves);
-                _stats.totalLossyVoxelDifference += std::min(abortThreshold, diff);
+                this->diffSubtrees(lev, lev, rep, nB, maxAllowedDiff + 1, diff, numLeaves);
+                _stats.totalLossyVoxelDifference += std::min(maxAllowedDiff, diff);
             }
         }
 
