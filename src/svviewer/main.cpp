@@ -213,6 +213,7 @@ void handleImgui() {
 	bool randomFreqInput = renderer->getFreqColors();
 	bool randomColsInput = renderer->getRandomColors();
 	bool shadowsEnabledInput = renderer->getShadowsEnabled();
+	int normSamplesInput = renderer->getNormSamples();
 	bool isUsingOrbitController = renderer->getCamera()->isUsingOrbitController();
 	float pixTolInput = renderer->getPixelTolerance();
 	float fovInput = renderer->getFovH();
@@ -264,12 +265,15 @@ void handleImgui() {
             renderer->setPixelTolerance(pixTolInput);
         if (ImGui::Checkbox("Beam optimization", &beamOptInput))
             renderer->toggleUseMinDepthOptimization();
-		if (ImGui::Checkbox("Frequency colors (ESVDAG/SSVDAG only)", &randomFreqInput))
+		if (ImGui::Checkbox("Frequency colors (E/SSVDAG)", &randomFreqInput))
             renderer->toggleFreqColors();
         if (ImGui::Checkbox("Random colors", &randomColsInput))
             renderer->toggleRandomColors();
-		if (ImGui::Checkbox("Shadows enabled (pretty render mode)", &shadowsEnabledInput))
+		if (ImGui::Checkbox("Shadows enabled ", &shadowsEnabledInput))
 			renderer->toggleShadowsEnabled();
+		if (ImGui::SliderInt("Normal samples ", &normSamplesInput, 0, 16))
+            renderer->setNormSamples(normSamplesInput);
+       
         //if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
         //	renderer->setFovH(fovInput);
 

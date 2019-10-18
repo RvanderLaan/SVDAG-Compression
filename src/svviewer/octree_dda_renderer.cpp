@@ -40,6 +40,7 @@ OctreeDDARenderer::OctreeDDARenderer(EncodedOctree * eo) {
 	_shadowsInputNormTex = 6;
 
 	_selectedVoxelIndex = -1;
+	_normSamples = 0;
 	_randomColors = true;
 	_freqColors = true;
 	_enableShadows = false;
@@ -426,6 +427,7 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 		glUniform1ui(_program[_selectedRenderMode].getUniformID("selectedVoxelIndex"), _selectedVoxelIndex);
 		glUniform1i(_program[_selectedRenderMode].getUniformID("randomColors"), _randomColors);
 		glUniform1i(_program[_selectedRenderMode].getUniformID("enableShadows"), _enableShadows);
+		glUniform1i(_program[_selectedRenderMode].getUniformID("normSamples"), _normSamples);
 		if (_octreeFormat == SSVDAG) glUniform1i(_program[_selectedRenderMode].getUniformID("freqColors"), _freqColors);
 	}
 	if (_selectedRenderMode == SHADOW || _selectedRenderMode == VIEWER)

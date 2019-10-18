@@ -1366,7 +1366,7 @@ unsigned int GeomOctree::mergeAcrossAllLevels() {
 
         printf("Avg matches found per node: %.0f\n", totalMatchCount / float(currentNodesToCheck.size()));
 
-        _stats.crossMergeTime = crossMergeStart - _clock.now();
+        _stats.crossMergeTime = _clock.now() - crossMergeStart;
 
         printf(" -> %lu (%.0f%%) [%s]\n", _data[levA].size() - multiLevelCorrespondences[levA].size(), 100 * multiLevelCorrespondences[levA].size() / (float) _data[levA].size(), sl::human_readable_duration(_stats.crossMergeTime).c_str());
 
