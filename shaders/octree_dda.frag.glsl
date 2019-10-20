@@ -64,6 +64,7 @@ uniform bool randomColors;
 uniform vec3 lightPos;
 uniform bool enableShadows;
 uniform float normalEpsilon;
+uniform int normSamples;
 #elif SHADOW_MODE
 uniform sampler2D hitPosTex;
 uniform sampler2D hitNormTex;
@@ -76,6 +77,10 @@ uniform sampler2D depthTex;
 uniform vec3 hsSamples[N_HS_SAMPLES];
 uniform int numAORays;
 uniform float lengthAORays;
+#endif
+
+#if (VIEWER_MODE && (SSVDAG || USSVDAG))
+uniform bool freqColors;
 #endif
 
 #if (VIEWER_MODE || DEPTH_MODE)
@@ -678,10 +683,10 @@ void main() {
 	vec3 hitNorm;
 	vec4 result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
 
-
 	// Hit position = camera origin + depth * ray direction
 	vec3 hitPos = r.o + result.x * r.d;
 	const float cellSize = 2. * rootHalfSide / pow(2, result.y);
+	uint nodeIndex = uint(result.w);
 
 //	const float localEpsilon = 1E-3f * result.y;
 	
@@ -719,26 +724,33 @@ void main() {
 			// Todo: proper normal derivation can be done by looking at the direction of the previous voxel during traversal
 			// Yes this is much easier, the data is already there, got it from dda_next
 
-			// vec3 smoothNorm = hitNorm;
-			// const int normSamples = 0;
-			// float numNormSamplesHit = 1;
-			// float normSampleRot = 3.14159f * 2.f / float(normSamples);
-			// // Sample multiple times per pixel, in the cone that surrounds the pixel projected into the scene
-			// for (int i = 0; i < normSamples; i++) {
-			// 	vec3 normSample;
-			// 	float rnd = mod(result.x + result.w * 0.01, 1);
-			// 	float rnd2 = 0.5f + rnd * 8;//rnd * 2;//mod(mod(result.x, result.z * rnd), 1);
-			// 	vec2 rayPixOffset = rnd2 * vec2(cos((i + rnd) * normSampleRot), sin((i + rnd) * normSampleRot)) / screenRes;
-			// 	r = computeCameraRay(screenCoords + rayPixOffset);
-			// 	vec2 t_min_max = vec2(result.x - cellSize * 0.5, result.x + cellSize * 0.5);
-			// 	vec4 normSampleRes = trace_ray(r, t_min_max, projectionFactor, normSample);
-			// 	if (normSampleRes.x >= 0) {
-			// 		numNormSamplesHit++;
-			// 		smoothNorm += normSample;
-			// 	}
-			// }
+			vec2 rnd3 = normalize(vec2(
+				(nodeIndex % 100) / 100.f,
+				((3 * nodeIndex) % 200) / 200.f
+			));
+
+			vec3 smoothNorm = hitNorm;
+			float numNormSamplesHit = 1;
+			float normSampleRot = 3.14159f * 2.f / float(normSamples);
+			float initAngleOffset = mod(result.x * screenCoords.x * nodeIndex * 0.01 + nodeIndex * 0.001 * screenCoords.y, 1);
+			// Sample multiple times per pixel, in the cone that surrounds the pixel projected into the scene
+			for (int i = 0; i < normSamples; i++) {
+				vec3 normSample;
+				float rad = 0.5;//mod(result.x + i / float(normSamples) + nodeIndex * 0.001, 2);
+				// Sample in a circle around the main ray, at a random radius
+				float angle = i * normSampleRot + initAngleOffset;
+				vec2 rayPixOffset = rad * vec2(cos(angle), sin(angle)) / screenRes;
+				r = computeCameraRay(screenCoords + rayPixOffset);
+				vec2 t_min_max = vec2(result.x - cellSize * 8, result.x + cellSize * 8); // vec2(0, 1e30);
+				stack_size = 0;
+				vec4 normSampleRes = trace_ray(r, t_min_max, projectionFactor, normSample);
+				if (normSampleRes.x >= 0) {
+					numNormSamplesHit++;
+					smoothNorm += normSample;
+				}
+			}
 			// smoothNorm /= numNormSamplesHit;
-			// hitNorm = smoothNorm;
+			hitNorm = normalize(smoothNorm);
 
 			// ====Diffuse shading====
 			vec3 lightDir = normalize(lightPos - hitPos);
@@ -754,13 +766,14 @@ void main() {
 //		color = TurboColormap(t);
 //		color = hitNorm * 0.5 + vec3(0.5);
 
-		// Assign random colors based on the index of a node
-		if (randomColors && selectedVoxelIndex == 0 && result.w > 0) {
-//			color *= randomColor(uint(result.w));
-			uint nodeIndex = uint(result.w);
-
-
+		if (nodeIndex == selectedVoxelIndex) {
+			// Highlight selected voxel index with blue
+			color.r *= 0.5f;
+			color.g *= 0.5f;
+			color.b = 1.f;
+		}
 #if (SSVDAG || USSVDAG)
+		else if (freqColors) {
 			// Visualize ref count by dividing (sorted) index by num of nodes in level
 			// Todo: Should make this a sperate render mode
 			int hitLev = int(result.y);
@@ -770,23 +783,20 @@ void main() {
 			else 					  levSize = levelOffsets[hitLev + 1] - levelOffsets[hitLev];
 			float indexInLevel = nodeIndex / levSize;
 			color *= TurboColormap(1.0f - indexInLevel - 0.05f);
-#else
+		}
+#endif
+		// Assign random colors based on the index of a node
+		else if (randomColors) {
 			vec3 randomColor = normalize(vec3(
 				(nodeIndex % 100) / 100.f,
 				((3 * nodeIndex) % 200) / 200.f,
 				((2 * nodeIndex) % 300) / 300.f
 			));
 			color *= randomColor;
-#endif
-		} else if (result.w == selectedVoxelIndex) {
-			// Highlight selected voxel index with blue
-			color.r *= 0.5f;
-			color.g *= 0.5f;
-			color.b = 1.f;
-		}
+		} 
 
 		// ====Shadow====
-		if (enableShadows) {
+		if (result.x >= 0 && enableShadows) {
 			// Trace ray to light pos
 			const vec3 p = hitPos + hitNorm * cellSize * 0.5f; // center of voxel + half voxel size in dir of normal
 			const vec3 lightToP = p - lightPos;
@@ -796,12 +806,9 @@ void main() {
 
 			r.o = p;
 			r.d = -normalize(lightToP);
-			vec2 t_min_max = vec2(0, lightToPLength);
-			vec4 shd_result = trace_ray(r, t_min_max, sProjFactor, hitNorm);
-
-			// Light fall-off
-//			t -= distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
-//			t = 1.0 - 2.0 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+			vec2 t_min_max = vec2(epsilon, lightToPLength);
+			stack_size = 0; // not sure why it needs to be reset, but else it causes artifacts
+			vec4 shd_result = trace_ray(r, t_min_max * 0.5, sProjFactor, hitNorm);
 
 			// Add shadows
 			color *= (shd_result.x > 0) ? 0.5 : 1;
@@ -809,15 +816,18 @@ void main() {
 		}
 	}
 	else {
-		if (result.x == -4.) // no intersection, out of BBox => background
+		if (result.x == -1. || result.x == -2.
+		// ) // inside BBox, but no intersection
+		// { 
+		// 	float t = (viewerRenderMode == 0) ? 1. - (result.z / float(maxIters)) : 1.;
+		// 	color = vec3(t,t*0.5,1);
+		// }
+		// else if (
+			|| result.x == -4.) // no intersection, out of BBox => background
 		{ 
 			color = 0.5 * (screenCoords.y + 1) * vec3(0.3,0.2,0.9);
 		}
-		else if (result.x == -1. || result.x == -2.) // inside BBox, but no intersection
-		{ 
-			float t = (viewerRenderMode == 0) ? 1. - (result.z / float(maxIters)) : 1.;
-			color = vec3(t,t*0.5,0);
-		}
+		
 		else if (result.x == -3.) // too many iterations
 		{
 			color = vec3(1.,0,0);

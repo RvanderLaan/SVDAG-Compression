@@ -60,7 +60,11 @@ public:
 	virtual void clearVoxel(int position);
 	inline void setSelectedVoxelIndex(int i) { _selectedVoxelIndex = i; }
 	inline int getSelectedVoxelIndex() { return _selectedVoxelIndex; }
+	inline void setNormSamples(int i) { _normSamples = i; }
+	inline int getNormSamples() { return _normSamples; }
+	inline bool getFreqColors() { return _freqColors; }
 	inline bool getRandomColors() { return _randomColors; }
+	inline void toggleFreqColors() { _freqColors = !_freqColors; }
 	inline void toggleRandomColors() { _randomColors = !_randomColors; }
 	inline bool getShadowsEnabled() { return _enableShadows; }
 	inline void toggleShadowsEnabled() { _enableShadows = !_enableShadows; }
@@ -124,7 +128,9 @@ protected:
 	int _viewerRenderMode;
 	int _selectedVoxelIndex;
 	bool _randomColors;
+	bool _freqColors;
 	bool _enableShadows;
+	int _normSamples;
 
 	// params mode SHADOW
 	sl::point3f _lightPos;

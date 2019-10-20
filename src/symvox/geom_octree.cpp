@@ -415,6 +415,7 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 	printf("OK! [%s]\t(%zu -> %zu)\n", sl::human_readable_duration(_clock.elapsed() - timeStamp).c_str(), acumSubtreesDAGNNodes, _nNodes);
 
 	_stats.buildDAGTime = _clock.elapsed();
+	_stats.nNodesLastLevDAG = _data[_levels - 1].size();
 
 	printf("\t- Finished! Total time [%s]\n", sl::human_readable_duration(_stats.buildDAGTime).c_str());
 }
@@ -527,6 +528,7 @@ void GeomOctree::toDAG(bool iternalCall) {
 	
 	_state = S_DAG;
 	_stats.nNodesDAG = _nNodes;
+	_stats.nNodesLastLevDAG = _data[_levels - 1].size();
 
 	if (!iternalCall) printf("OK! [%s]\n", sl::human_readable_duration(_stats.toDAGTime).c_str());
 }
