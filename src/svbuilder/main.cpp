@@ -110,12 +110,12 @@ int main(int argc, char ** argv) {
 				if (i + 1 < argc) {
 					// Clamped between 1.2 and 10 (https://micans.org/mcl/man/mclfaq.html#toc-granularity)
 		        	lossyInflation = std::stof(argv[i + 1]);
-					lossyInflation = std::min(10.0f, std::max(1.2f, lossyInflation));
+					lossyInflation = std::min(10.0f, std::max(1.1f, lossyInflation));
 				}
 		        if (i + 2 < argc) {
 					// Clamped between 1 and 8, as >8 diff would mean ???
 					allowedLossyDiffFactor = std::stof(argv[i + 2]);
-					allowedLossyDiffFactor = std::min(32.0f, std::max(1.0f, allowedLossyDiffFactor));
+					allowedLossyDiffFactor = std::min(32.0f, std::max(0.01f, allowedLossyDiffFactor));
 				}
 		        if (i + 3 < argc) {
 					includedNodeRefCount = std::stoi(argv[i + 3]);
@@ -209,31 +209,22 @@ int main(int argc, char ** argv) {
 	EncodedSVDAG svdag2;
 	svdag2.encode(octree);
 	svdag2.save(basePath + ".svdag");
-
-	EncodedSSVDAG esvdag2;
-	esvdag2.encode(octree);
-	esvdag2.save(basePath + ".esvdag");
+	if (lossy) {
+		EncodedSSVDAG esvdag2;
+		esvdag2.encode(octree);
+		esvdag2.save(basePath + ".esvdag");
+	}
 
 	if (lossy) {
 		auto origDagTime = octree.getStats().toDAGTime; // since toDag is also called on the lossy dag, restore original dag time
         octree.toLossyDag(lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
 		octree.getStats().toDAGTime = origDagTime;
+	} else if (multiLevel) {
+		octree.mergeAcrossAllLevels();
 	}
 
-	// Encode conventional SVDAG
 	EncodedSVDAG svdag;
 	svdag.encode(octree);
-
-	if (multiLevel) {
-		// TODO: Clean this up later
-		// This block will save both the single and multi level merged SVDAG
-		svdag.save(basePath + "-single.svdag");
-
-		octree.mergeAcrossAllLevels();
-		EncodedSVDAG svdag2;
-		svdag2.encode(octree);
-		svdag2.save(basePath + "-multi.svdag");
-	}
 
 	EncodedSSVDAG esvdag;
 	if (!multiLevel) esvdag.encode(octree);
@@ -248,41 +239,42 @@ int main(int argc, char ** argv) {
 	EncodedSSVDAG ssvdag;
 	if (!multiLevel) ssvdag.encode(octree);
 
-    EncodedSSVDAG psvdag;
-    // psvdag.encode(octreeCopy);
-
     bool saveAll = true;
 
     if (saveAll) {
 		std::string infix = "";
 		if (lossy)
 			infix += paramStr;
-
+		else if (multiLevel)
+			infix += "-multi";
+		
         svdag.save(basePath + infix + ".svdag");
-        ussvdag.save(basePath + infix + ".ussvdag");
-        ssvdag.save(basePath + infix + ".ssvdag");
-        esvdag.save(basePath + infix + ".esvdag");
-//        psvdag.save(basePath + ".psvdag");
-    } else {
-        for (int i = 4; i < argc; ++i) {
-            std::string outputFile = argv[i];
-            if     (strstr(outputFile.c_str(), ".svo") || strstr(outputFile.c_str(), ".SVO")) {
-                if (levelStep == 0) svo.save(outputFile);
-            }
-            else if (strstr(outputFile.c_str(), ".svdag") || strstr(outputFile.c_str(), ".SVDAG")) {
-                svdag.save(outputFile);
-            }
-            else if (strstr(outputFile.c_str(), ".ussvdag") || strstr(outputFile.c_str(), ".USSVDAG")) {
-                ussvdag.save(outputFile);
-            }
-            else if (strstr(outputFile.c_str(), ".ssvdag") || strstr(outputFile.c_str(), ".SSVDAG")) {
-                ssvdag.save(outputFile);
-            }
-            else if (strstr(outputFile.c_str(), ".psvdag") || strstr(outputFile.c_str(), ".PSVDAG")) {
-                psvdag.save(outputFile);
-            }
-        }
-    }
+		if (!multiLevel) {
+			ussvdag.save(basePath + infix + ".ussvdag");
+			ssvdag.save(basePath + infix + ".ssvdag");
+			esvdag.save(basePath + infix + ".esvdag");
+		}
+    } 
+
+	for (int i = 4; i < argc; ++i) {
+		std::string outputFile = argv[i];
+		if     (strstr(outputFile.c_str(), ".svo") || strstr(outputFile.c_str(), ".SVO")) {
+			if (levelStep == 0) svo.save(outputFile);
+		}
+		else if (strstr(outputFile.c_str(), ".svdag") || strstr(outputFile.c_str(), ".SVDAG")) {
+			svdag.save(outputFile);
+		}
+		else if (strstr(outputFile.c_str(), ".ussvdag") || strstr(outputFile.c_str(), ".USSVDAG")) {
+			ussvdag.save(outputFile);
+		}
+		else if (strstr(outputFile.c_str(), ".ssvdag") || strstr(outputFile.c_str(), ".SSVDAG")) {
+			ssvdag.save(outputFile);
+		}
+		else if (strstr(outputFile.c_str(), ".esvdag") || strstr(outputFile.c_str(), ".ESVDAG")) {
+			esvdag.save(outputFile);
+		}
+	}
+    
 
 	sl::time_duration totalTime = ck.elapsed();
 
@@ -317,7 +309,7 @@ int main(int argc, char ** argv) {
 		if (i == 1) {
 			stdout = fopen("stats.txt", "a");
 		}
-		printf("%s, %d, lossy: %d\n", baseName.c_str(), nLevels, lossy);
+		printf("%s, %d, lossy: %d, cross-level: %d\n", baseName.c_str(), nLevels, lossy, multiLevel);
 		printf("#Voxels, %zu\n", stats.nTotalVoxels);
 		printf(", SVDAG, ESVDAG, SSVDAG, SVO\n");
 		printf("#nodes, %zu, '', %zu, %zu\n", stats.nNodesDAG, stats.nNodesSDAG, stats.nNodesSVO);
@@ -329,14 +321,15 @@ int main(int argc, char ** argv) {
 			printf("time (ms), %zu, %zu, %zu, %zu, %zu, %zu\n", stats.toDAGTime.as_milliseconds(), stats.toLSVDAGTime.as_milliseconds(), totalTime.as_milliseconds(), stats.lHashing.as_milliseconds(), stats.lSimNodes.as_milliseconds(), stats.lClustering.as_milliseconds());
 
 			printf("Lossy stats, %.2f, %.2f, %i\n", lossyInflation, allowedLossyDiffFactor, includedNodeRefCount);
-			printf("TotalVoxDifference, #NodesIn, #ClustersOut, #edges\n");
-			printf("%zu, %zu, %zu, %zu\n", stats.totalLossyVoxelDifference, stats.nClusteredNodes, stats.nClusters, stats.nEdges);
+			printf("TotalVoxDifference, #NodesIn, #ClustersOut, #edges, svdag mem, lsvdag mem\n");
+			printf("%zu, %zu, %zu, %zu, %zu, %zu\n", stats.totalLossyVoxelDifference, stats.nClusteredNodes, stats.nClusters, stats.nEdges, svdag2.getDataSize(), svdag.getDataSize());
 		} else if (multiLevel) {
 			printf("Construction times:\n");
 			printf(",SVDAG, Total, Cross-level\n");
 			printf("time (ms), %zu, %zu, %zu\n", stats.toDAGTime.as_milliseconds(), totalTime.as_milliseconds(), stats.crossMergeTime.as_milliseconds());
 
-			printf("Cross-level nodes eliminated:, %zu", stats.nCrossLevelMerged);
+			printf("Cross-level, nodes eliminated, svdag mem, csvdag mem\n");
+			printf(", %zu, %zu, %zu\n", stats.nCrossLevelMerged, svdag2.getDataSize(), svdag.getDataSize());
 		}else {
 			printf("Construction times:\n");
 			printf(",SVDAG, Total\n");

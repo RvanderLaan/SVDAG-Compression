@@ -54,49 +54,9 @@ public:
             int id = 0) {
         printf("Splitting %zu edges into subgraphs... ", edges.size()); fflush(stdout);
         const auto subGraphs = findSubGraphs(edges);
-        printf("Found %zu subgraphs. ", subGraphs.size()); fflush(stdout);
-        std::vector<std::vector<unsigned int>> clusters;
-        std::vector<Edge> clusterEdges;
 
-        // Threshold of cluster size for when to run MCL or when to just create a cluster of the whole subgraph
-        double graphSizeThresholdToCluster = std::max(sqrt(edges.size()) / 4.0, 2.0);
-
-        int stepLogger = (int) round(subGraphs.size() / 10.f);
-        int i = 0;
-        for (const auto& subGraph : subGraphs) {
-            if (stepLogger > 0 && (i++ % stepLogger) == 0) {
-                printf("%.0f%%..", round(100.0f * (i / (float) subGraphs.size()))); fflush(stdout);
-            }
-            if (subGraph.size() <= graphSizeThresholdToCluster) {
-                // For extremly small clusters, the subgraph is one cluster
-                std::set<unsigned int> clusterSet;
-                for (const auto& e : subGraph) {
-                    clusterSet.emplace(e.sourceId);
-                    clusterSet.emplace(e.targetId);
-                }
-                std::vector<unsigned int> clusterVec(clusterSet.begin(), clusterSet.end());
-                
-                // Set cluster center at index 0
-                setClusterCenterToBeginning(subGraph, clusterVec);
-
-                clusters.emplace_back(clusterVec);
-            } else {
-                // Else, perform MCL
-                auto subClusters = MCL(subGraph, inflation, id);
-
-                // Set cluster center at index 0 for all subgraphs
-                for (auto &cluster : subClusters) {
-                    // Find only those edges that are in this specific subCluster
-                    clusterEdges.clear();
-                    getClusterEdges(subGraph, cluster, clusterEdges);
-                    setClusterCenterToBeginning(clusterEdges, cluster);
-                }
-
-                clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
-            }
-        }
-        printf("Total of %zu clusters. ", clusters.size());
-        return clusters;
+        // Instead of an arbitrary threshold for when to apply a clustering algorithm, batch small graphs together
+        return batchClustering(subGraphs, inflation, id);
     }
 
     /**
@@ -379,15 +339,51 @@ public:
         }
         printf("\n");
      }
-};
 
 
+    static void printHist(const std::vector<std::vector<Edge>> &subgraphs, const std::vector<std::vector<unsigned int>> &clusters) {
+        if (subgraphs.empty()) return;
+        printf("\nDEBUG: Check subgraph and cluster sizes\n");
+        unsigned int histSize = 16; // num of ref counts to keep track of
+        unsigned int binSize = 5;
 
-     // Batch small subgraphs together to avoid IO overhead of writing/reading to/from disk
-        // int maxBatchSize = 50000;
+        // csv header
+        printf("#nodes");
+        for (unsigned int i = 1; i < histSize; ++i) {
+            printf(", %u", i * binSize);
+        }
+        printf("\n");
 
-        // std::vector<Edge> batch;
-        // batch.reserve(maxBatchSize);
+        std::vector<unsigned int> hist(histSize);
+        for (const auto &g : subgraphs) {
+            hist[std::min(g.size() / binSize, (size_t) (histSize - 1))] += 1;
+        }
+        printf("Subgraphs");
+        for (unsigned int i = 1; i < histSize; ++i) {
+            printf(", %u", hist[i]);
+        }
+
+        printf("\n");
+
+
+        hist.clear();
+        hist.reserve(histSize);
+        for (const auto &c : clusters) {
+            hist[std::min(c.size() / binSize, (size_t) (histSize - 1))] += 1;
+        }
+        printf("Clusters");
+        for (unsigned int i = 1; i < histSize; ++i) {
+            printf(", %u", hist[i]);
+        }
+        printf("\n");
+    }
+
+    static std::vector<std::vector<unsigned int>> batchClustering(const std::vector<std::vector<Edge>> &subGraphs, float inflation, int id) {
+// Batch small subgraphs together to avoid IO overhead of writing/reading to/from disk
+        int maxBatchSize = 50000;
+
+        std::vector<Edge> batch;
+        batch.reserve(maxBatchSize);
 
         /**
          * Flow:
@@ -401,49 +397,63 @@ public:
          * 2.6. Wait for both...
          */
 
-        // int stepLogger = subGraphs.size() / 10;
-        // int i = 0;
-        // for (const auto& subGraph : subGraphs) {
-        //     if ((i++ % stepLogger) == 0) {
-        //         printf("%.0f%%..", round(100.0f * (i / (float) subGraphs.size()))); fflush(stdout);
-        //     }
-        //     // Todo: For extremly small clusters, the subgraph is one cluster? Needs experiment
-        //     // if (subGraph.size() <= graphSizeThresholdToCluster) {
-        //     if (subGraph.size() > maxBatchSize) {
-        //         auto subClusters = MCL(subGraph, inflation, id);
-        //         // Set cluster center at index 0 for all subgraphs
-        //         for (auto &cluster : subClusters) {
-        //             clusterEdges.clear();
-        //             getClusterEdges(subGraph, cluster, clusterEdges);
-        //             setClusterCenterToBeginning(clusterEdges, cluster);
-        //         }
-        //         clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+        printf("Found %zu subgraphs. ", subGraphs.size()); fflush(stdout);
+        std::vector<std::vector<unsigned int>> clusters;
+        std::vector<Edge> clusterEdges;
 
-        //     } else if (batch.size() + subGraph.size() < maxBatchSize) {
-        //         // Add subgraph to batch if it fits
-        //         batch.insert(batch.end(), subGraph.begin(), subGraph.end());
-        //     } else {
-        //         // Cluster batch if it is full
-        //         auto subClusters = MCL(batch, inflation, id);
-        //         for (auto &cluster : subClusters) {
-        //             clusterEdges.clear();
-        //             getClusterEdges(batch, cluster, clusterEdges);
-        //             setClusterCenterToBeginning(clusterEdges, cluster);
-        //         }
-        //         clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+        int stepLogger = std::max(subGraphs.size() / 10, (size_t) 1);
+        int i = 0;
+        for (const auto& subGraph : subGraphs) {
+            if ((i++ % stepLogger) == 0) {
+                printf("%.0f%%..", round(100.0f * (i / (float) subGraphs.size()))); fflush(stdout);
+            }
 
-        //         // Add current subGraph back into the batch
-        //         batch.clear();
-        //         batch.insert(batch.end(), subGraph.begin(), subGraph.end());
-        //     }
-        // }
-        // // Cluster what remains in the batch
-        // if (batch.size() > 0) {
-        //     auto subClusters = MCL(batch, inflation, id);
-        //     for (auto &cluster : subClusters) {
-        //         clusterEdges.clear();
-        //         getClusterEdges(batch, cluster, clusterEdges);
-        //         setClusterCenterToBeginning(clusterEdges, cluster);
-        //     }
-        //     clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
-        // }
+            if (subGraph.size() > maxBatchSize) {
+                auto subClusters = MCL(subGraph, inflation, id);
+                // Set cluster center at index 0 for all subgraphs
+                for (auto &cluster : subClusters) {
+                    clusterEdges.clear();
+                    getClusterEdges(subGraph, cluster, clusterEdges);
+                    setClusterCenterToBeginning(clusterEdges, cluster);
+                }
+                clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+
+            } else if (batch.size() + subGraph.size() < maxBatchSize) {
+                // Add subgraph to batch if it fits
+                batch.insert(batch.end(), subGraph.begin(), subGraph.end());
+            } else {
+                // Cluster batch if it is full
+                auto subClusters = MCL(batch, inflation, id);
+                for (auto &cluster : subClusters) {
+                    clusterEdges.clear();
+                    getClusterEdges(batch, cluster, clusterEdges);
+                    setClusterCenterToBeginning(clusterEdges, cluster);
+                }
+                clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+
+                // Add current subGraph back into the batch
+                batch.clear();
+                batch.insert(batch.end(), subGraph.begin(), subGraph.end());
+            }
+        }
+        // Cluster what remains in the batch
+        if (batch.size() > 0) {
+            auto subClusters = MCL(batch, inflation, id);
+            for (auto &cluster : subClusters) {
+                clusterEdges.clear();
+                getClusterEdges(batch, cluster, clusterEdges);
+                setClusterCenterToBeginning(clusterEdges, cluster);
+            }
+            clusters.insert(clusters.end(), subClusters.begin(), subClusters.end());
+        }
+
+#if 1
+        printHist(subGraphs, clusters);
+#endif
+
+        return clusters;
+    }
+};
+
+
+     

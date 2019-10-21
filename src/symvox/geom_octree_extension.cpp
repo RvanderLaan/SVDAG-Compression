@@ -909,7 +909,7 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
         }
         // Todo: use higher match depth when lossyDiff is higher than 8 
         buildMultiMap(currentMatchDepth, matchMaps, hashes, lev, lev + 1);
-        _stats.lHashing += _clock.now() - tHashStart;
+        _stats.lHashing = _clock.now() - tHashStart;
 
         //////// FINDING EDGES FOR CLUSTERING ////////
         // For all nodes in this level, in reverse order (starting with least referenced)
@@ -1043,7 +1043,9 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
                 unsigned int diff = 0, numLeaves = 0;
                 const auto &nB = _data[lev][nbID];
                 this->diffSubtrees(lev, lev, rep, nB, maxAllowedDiff + 1, diff, numLeaves);
-                _stats.totalLossyVoxelDifference += std::min(maxAllowedDiff, diff);
+                // Voxel diff increases with number of references
+                int numRefs = refCounts[lev][nbID];
+                _stats.totalLossyVoxelDifference += std::min(maxAllowedDiff, diff) * numRefs;
             }
         }
 
