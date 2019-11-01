@@ -909,7 +909,7 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
         }
         // Todo: use higher match depth when lossyDiff is higher than 8 
         buildMultiMap(currentMatchDepth, matchMaps, hashes, lev, lev + 1);
-        _stats.lHashing = _clock.now() - tHashStart;
+        _stats.lHashing += _clock.now() - tHashStart;
 
         //////// FINDING EDGES FOR CLUSTERING ////////
         // For all nodes in this level, in reverse order (starting with least referenced)
