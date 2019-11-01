@@ -97,6 +97,8 @@ int main(int argc, char ** argv) {
 		exit(1);
 	}
 
+	// TODO: Load encoded SVDAG as octree, so lossy compression can be experimented with more quickly - no need for voxelization each time
+
     bool lossy = false;
 	bool multiLevel = false;
 	bool exploitHiddenGeom = false;
@@ -212,6 +214,9 @@ int main(int argc, char ** argv) {
 	EncodedSVDAG svdag2;
 	svdag2.encode(octree);
 	svdag2.save(basePath + ".svdag");
+
+	
+
 	if (lossy) {
 		EncodedSSVDAG esvdag2;
 		esvdag2.encode(octree);
