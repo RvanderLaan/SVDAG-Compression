@@ -1760,7 +1760,6 @@ void GeomOctree::hiddenGeometryFloodfill() {
         // Replace the start node with its child
         startTrav = curNode;
 
-
         // Stop if no child is to be found
         if (!node.existsChildPointer(startIdx)) {
             break;
@@ -1826,15 +1825,15 @@ void GeomOctree::hiddenGeometryFloodfill() {
 
 
     // Check to see if floodfill works: Set all inside nodes to bitmask with 1
-#if 0
+#if 1
     printf("DEBUG: Setting inside nodes to first node of level...\n");
     for (int lev = _levels - 1; lev >= 0; --lev) {
         for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {
             Node &parent = _data[lev][nodeId];
             for (int c = 0; c < 8; ++c) {
                 if (!parent.existsChild(c) && !parent.getChildOutsideBit(c)) {
-                    parent.setChildBit(c);
-                    parent.children[c] = 0;
+                    parent.unsetChildBit(c);
+                    parent.children[c] = nullNode;
                 }
 //                if (parent.existsChild(c) && parent.getChildOutsideBit(c)) {
 //                    _data[lev][nodeId].unsetChildBit(c);
@@ -1845,6 +1844,8 @@ void GeomOctree::hiddenGeometryFloodfill() {
     }
 
 #endif
+
+    cleanEmptyNodes();
 
 
     printf("Done with flood fill! %u leaves outside of geometry\n", numOutsideLeafs);
@@ -1898,7 +1899,7 @@ void GeomOctree::toHiddenGeometryDAG() {
     ///////////////////////////////////////////////////////
     // Todo: Other option: Modify SVO to an optimal state, so that we can call toDAG as usual
 
-    printf(" * - Converting to DAG:\n");
+    printf(" * - Converting to HDAG:\n");
     // Now perform toDAG and check for matches 256 times
     _nNodes = 1;
     std::vector<id_t> correspondences;
@@ -1908,6 +1909,9 @@ void GeomOctree::toHiddenGeometryDAG() {
 
     // For every level, starting at the leaves...
     for (unsigned int lev = _levels - 2; lev > 1; --lev) {
+
+        printf("L%u ", lev); fflush(stdout);
+
         // Clear the lists used to keep track of correspondences etc
         size_t oldLevSize = _data[lev].size();
         uniqueNodes.clear();
@@ -1961,21 +1965,21 @@ void GeomOctree::toHiddenGeometryDAG() {
                 // Todo: Should we keep looking for a better match once one is found,
                 // or will the first match be matching to another node that this node can match to? I think so...
 
-                sl::uint8_t visibleChildrenA = ~n.outsideMask;
-                sl::uint8_t visibleChildrenB = ~nB.outsideMask;
+                sl::uint8_t visibleChildrenA = n.outsideMask;
+                sl::uint8_t visibleChildrenB = nB.outsideMask;
 
                 sl::uint8_t overlapVisChildren = visibleChildrenA & visibleChildrenB;
 
                 bool couldReplace = false;
-                id_t replacer = nodeIndex;
-                id_t replaced = idB;
+                id_t replacer = idB;
+                id_t replaced = nodeIndex;
 
                 if (overlapVisChildren == visibleChildrenA) { // Node A could replace node B
-                   couldReplace = true;
+//                   couldReplace = true;
                 } else if (overlapVisChildren == visibleChildrenB) { // Node B could replace node A
                     couldReplace = true;
-                    replacer = idB;
-                    replaced = nodeIndex;
+                    replacer = nodeIndex;
+                    replaced = idB;
                 }
 
                 if (couldReplace) {
@@ -2002,7 +2006,8 @@ void GeomOctree::toHiddenGeometryDAG() {
                         if (correspondences[replacer] != (id_t) - 1) {
                             correspondences[replaced] = correspondences[replacer];
                         } else {
-                            unresolvedCorrespondences[replaced] = replacer; // we don't know yet if replacer is unique
+                            // we don't know yet if replacer is unique
+                            unresolvedCorrespondences[replaced] = replacer;
                         }
                         break;
                     }
@@ -2014,23 +2019,30 @@ void GeomOctree::toHiddenGeometryDAG() {
                 uniqueNodes.push_back(n);
             }
         }
+        printf("Correspondences doned "); fflush(stdout);
 
         // Keep looking for correspondences until all have been resolved
+        // Correspondences are pointing to the old node list, now make them point to new nodes
+        auto it = unresolvedCorrespondences.begin();
         while (!unresolvedCorrespondences.empty()) {
-            // Correspondences are pointing to the old node list, now make them point to new nodes
-            for (auto it = unresolvedCorrespondences.begin(); it != unresolvedCorrespondences.end(); it++) {
-                if (correspondences[it->second] != (id_t) -1) {
-                    // the correspondence has been resolved
-                    correspondences[it->first] = correspondences[it->second];
-                } else if (unresolvedCorrespondences.find(it->second) != unresolvedCorrespondences.end()) {
-                    // the correspondence points to another unresolved correspondence
-                    unresolvedCorrespondences[it->first] = unresolvedCorrespondences[it->second];
-                }
+            if (correspondences[it->second] != (id_t) -1) {
+                // the correspondence has been resolved
+                correspondences[it->first] = correspondences[it->second];
+                unresolvedCorrespondences.erase(it->first);
+            } else if (unresolvedCorrespondences.find(it->second) != unresolvedCorrespondences.end()) {
+                // the correspondence points to another unresolved correspondence
+                unresolvedCorrespondences[it->first] = unresolvedCorrespondences[it->second];
+            } else {
+                printf("Unresolved correspondence cannot be resolved. Should not happen. \n");
+                unresolvedCorrespondences.erase(it->first);
+                // Add as unique node as fallback
+                correspondences[it->first] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
+                uniqueNodes.push_back(_data[lev][it->first]);
             }
         }
 
 //        if (!iternalCall)
-            printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
+        printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());
 
         _data[lev].clear();
         _data[lev].shrink_to_fit();

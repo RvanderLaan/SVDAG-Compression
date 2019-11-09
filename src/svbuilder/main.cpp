@@ -155,7 +155,7 @@ int main(int argc, char ** argv) {
         svo.encode(octree);
 		if (exploitHiddenGeom) {
             octree.hiddenGeometryFloodfill();
-//            octree.toHiddenGeometryDAG();
+            octree.toHiddenGeometryDAG();
 		}
 
 		octree.toDAG();
