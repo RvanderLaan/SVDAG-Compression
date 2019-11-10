@@ -83,9 +83,13 @@ int main(int argc, char ** argv) {
 	Scene scene;
 
     bool isLas = false;
+	bool loadAttributes = true;
 
 	if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
-		scene.loadObj(inputFile, true, false, false, false, true);
+		scene.loadObj(inputFile, true, loadAttributes, false, false, true);
+		if (loadAttributes) {
+			scene.loadTextures(sl::pathname_directory(inputFile));
+		}
     } else if (strstr(inputFile.c_str(), ".las") || strstr(inputFile.c_str(), ".LAS")) {
         scene.loadLas(inputFile);
         isLas = true;
@@ -97,9 +101,10 @@ int main(int argc, char ** argv) {
 		exit(1);
 	}
 
-    bool lossy = false;
+	bool lossy = false;
 	bool multiLevel = false;
 	bool exploitHiddenGeom = false;
+	bool attributes = false;
 
 	float lossyInflation = 2.0;
 	float allowedLossyDiffFactor = 1.0;
@@ -109,20 +114,20 @@ int main(int argc, char ** argv) {
 		std::string arg = argv[i];
 		if (arg == "--lossy" || arg == "-l") {
 		    try {
-				if (i + 1 < argc) {
-					// Clamped between 1.2 and 10 (https://micans.org/mcl/man/mclfaq.html#toc-granularity)
-		        	lossyInflation = std::stof(argv[i + 1]);
-					lossyInflation = std::min(10.0f, std::max(1.1f, lossyInflation));
-				}
-		        if (i + 2 < argc) {
-					// Clamped between 1 and 8, as >8 diff would mean ???
-					allowedLossyDiffFactor = std::stof(argv[i + 2]);
-					allowedLossyDiffFactor = std::min(32.0f, std::max(0.01f, allowedLossyDiffFactor));
-				}
-		        if (i + 3 < argc) {
-					includedNodeRefCount = std::stoi(argv[i + 3]);
-					includedNodeRefCount = std::min(1000000, std::max(1, includedNodeRefCount));
-				}
+					if (i + 1 < argc) {
+						// Clamped between 1.2 and 10 (https://micans.org/mcl/man/mclfaq.html#toc-granularity)
+								lossyInflation = std::stof(argv[i + 1]);
+						lossyInflation = std::min(10.0f, std::max(1.1f, lossyInflation));
+					}
+					if (i + 2 < argc) {
+						// Clamped between 1 and 8, as >8 diff would mean ???
+						allowedLossyDiffFactor = std::stof(argv[i + 2]);
+						allowedLossyDiffFactor = std::min(32.0f, std::max(0.01f, allowedLossyDiffFactor));
+					}
+					if (i + 3 < argc) {
+						includedNodeRefCount = std::stoi(argv[i + 3]);
+						includedNodeRefCount = std::min(1000000, std::max(1, includedNodeRefCount));
+					}
 		    } catch(std::invalid_argument&) {
 		        printf(" --- WARNING: Could not parse lossy compression parameters, using defaults. ---\n");
 		    }
@@ -131,8 +136,10 @@ int main(int argc, char ** argv) {
 		}
 		else if (arg == "--cross-level-merging" || arg == "-c")
 			multiLevel = true;
-        if (arg == "--hidden-geometry" || arg == "-h")
-            exploitHiddenGeom = true;
+		if (arg == "--hidden-geometry" || arg == "-h")
+			exploitHiddenGeom = true;
+		if (arg == "--attributes" || arg == "-a")
+			attributes = true;
 	}
 
 	printf("Lossy: %d, Cross-level: %d, Hidden geom: %d\n", lossy, multiLevel, exploitHiddenGeom);
@@ -149,19 +156,23 @@ int main(int argc, char ** argv) {
 
 	EncodedSVO svo;
 	if (levelStep == 0) {
-        if (!isLas) {
-            octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
-        } else {
-            octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
-        }
-        svo.encode(octree);
+		if (!isLas) {
+				octree.buildSVO(nLevels, sceneBBoxD, false, NULL, attributes);
+		} else {
+				octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
+		}
+		svo.encode(octree);
 		if (exploitHiddenGeom) {
             octree.hiddenGeometryFloodfill();
             octree.toHiddenGeometryDAG();
 		}
 
+		if (attributes) {
+			octree.toAttributeSVO();
+		}
+
 		octree.toDAG();
-        
+
 	}
 	else {
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);

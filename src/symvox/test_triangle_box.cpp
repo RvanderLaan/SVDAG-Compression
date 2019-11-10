@@ -18,7 +18,7 @@
 //=============================================================
 
 /// TRIANGLE - BOX Intersection Code ------------------------------------
-/// by Tomas Akenine-Möller
+/// by Tomas Akenine-Mï¿½ller
 /// see http://fileadmin.cs.lth.se/cs/Personal/Tomas_Akenine-Moller/code/
 /////////////////////////////////////////////////////////////////////////
 
@@ -181,4 +181,109 @@ bool testTriBox(const sl::point3d boxCenter, const double boxHalfSide, const sl:
 
 	return true;   /* box and triangle overlaps */
 
+}
+
+float clamp(float n, float lower, float upper) {
+    return std::max(lower, std::min(n, upper));
+}
+
+/** From https://www.gamedev.net/forums/topic/552906-closest-point-on-triangle/ **/
+sl::point3f closestPointOnTri(const sl::point3d p, const sl::point3f *triangle) {
+	//sl::vector3f pos = sl::conv_to<sl::vector3f>::from(p.as_vector());
+	sl::vector3f pos = sl::vector3f(p[0], p[1], p[2]);
+
+    sl::vector3f edge0 = triangle[1] - triangle[0];
+    sl::vector3f edge1 = triangle[2] - triangle[0];
+    sl::vector3f v0 = triangle[0].as_vector() - pos;
+
+    float a = edge0.dot( edge0 );
+    float b = edge0.dot( edge1 );
+    float c = edge1.dot( edge1 );
+    float d = edge0.dot( v0 );
+    float e = edge1.dot( v0 );
+
+    float det = a*c - b*b;
+    float s = b*e - c*d;
+    float t = b*d - a*e;
+
+    if ( s + t < det ) {
+        if ( s < 0.f ) {
+            if ( t < 0.f ) {
+                if ( d < 0.f ) {
+                    s = clamp( -d/a, 0.f, 1.f );
+                    t = 0.f;
+                } else {
+                    s = 0.f;
+                    t = clamp( -e/c, 0.f, 1.f );
+                }
+            } else {
+                s = 0.f;
+                t = clamp( -e/c, 0.f, 1.f );
+            }
+        } else if ( t < 0.f ) {
+            s = clamp( -d/a, 0.f, 1.f );
+            t = 0.f;
+        } else {
+            float invDet = 1.f / det;
+            s *= invDet;
+            t *= invDet;
+        }
+    } else {
+        if ( s < 0.f ) {
+            float tmp0 = b+d;
+            float tmp1 = c+e;
+            if ( tmp1 > tmp0 ) {
+                float numer = tmp1 - tmp0;
+                float denom = a-2*b+c;
+                s = clamp( numer/denom, 0.f, 1.f );
+                t = 1-s;
+            } else {
+                t = clamp( -e/c, 0.f, 1.f );
+                s = 0.f;
+            }
+        }
+        else if ( t < 0.f ) {
+            if ( a+d > b+e ) {
+                float numer = c+e-b-d;
+                float denom = a-2*b+c;
+                s = clamp( numer/denom, 0.f, 1.f );
+                t = 1-s;
+            } else {
+                s = clamp( -e/c, 0.f, 1.f );
+                t = 0.f;
+            }
+        } else {
+            float numer = c+e-b-d;
+            float denom = a-2*b+c;
+            s = clamp( numer/denom, 0.f, 1.f );
+            t = 1.f - s;
+        }
+    }
+
+    return triangle[0] + s * edge0 + t * edge1;
+}
+
+// Compute barycentric coordinates (u, v, w) for
+// point p with respect to triangle (a, b, c)
+void barycentric(sl::point3d p, const sl::point3f *tri, float &u, float &v, float &w)
+{
+    sl::point3d a, b, c;
+    //a = sl::conv_to< sl::point3d >::from(tri[0]);
+    //b = sl::conv_to< sl::point3d >::from(tri[1]);
+    //c = sl::conv_to< sl::point3d >::from(tri[2]);
+
+	a = sl::point3d(tri[0][0], tri[0][1], tri[0][2]);
+	b = sl::point3d(tri[1][0], tri[1][1], tri[1][2]);
+	c = sl::point3d(tri[2][0], tri[2][1], tri[2][2]);
+
+    sl::vector3d v0 = b - a, v1 = c - a, v2 = p - a;
+    float d00 = v0.dot(v0);
+    float d01 = v0.dot(v1);
+    float d11 = v1.dot(v1);
+    float d20 = v2.dot(v0);
+    float d21 = v2.dot(v1);
+    float denom = d00 * d11 - d01 * d01;
+    v = (d11 * d20 - d01 * d21) / denom;
+    w = (d00 * d21 - d01 * d20) / denom;
+    u = 1.0f - v - w;
 }

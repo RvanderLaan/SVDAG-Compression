@@ -536,7 +536,7 @@ void init(inout Ray r, inout traversal_status ts) {
 //	Z: num Iterations used.
 //  W: node index (-1 => no intersection)
 
-vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, out vec3 norm) {
+vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, out vec3 norm, out traversal_status ts_out) {
 	
 	if (!transform_ray(r, t_min_max))
 		return vec4(-4.0,0,0,-1); // out of scene Bbox
@@ -565,6 +565,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 			const bool hit = (ts.level >= max_level || resolution_ok(ts.t_current, ts.cell_size, projection_factor)); 
 			if (hit) {
 				norm = -vec3(stepDir);
+				ts_out = ts;
 				return vec4(ts.t_current * scale, ts.level, float(iteration_count), ts.node_index);  // intersection
 			} else {
 				down_in(r, ts);
@@ -681,7 +682,8 @@ void main() {
 	const float epsilon = 1E-3f;
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) - epsilon : 0, 1e30); // subtract epsilon for getting proper normal
 	vec3 hitNorm;
-	vec4 result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
+	traversal_status ts;
+	vec4 result = trace_ray(r, t_min_max, projectionFactor, hitNorm, ts);
 
 	// Hit position = camera origin + depth * ray direction
 	vec3 hitPos = r.o + result.x * r.d;
@@ -702,7 +704,7 @@ void main() {
 		else if (viewerRenderMode == 3) { // PRETTY
 
 			// ====Base color, based on depth====
-			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
+			t = 1.0; // - result.x / length(sceneBBoxMax-sceneBBoxMin);
 
 
 			// ====Voxel normal direction====
@@ -729,22 +731,24 @@ void main() {
 				((3 * nodeIndex) % 200) / 200.f
 			));
 
+			const float normalRayLength = 64 * cellSize;
 			vec3 smoothNorm = hitNorm;
 			float numNormSamplesHit = 1;
 			float normSampleRot = 3.14159f * 2.f / float(normSamples);
 			float initAngleOffset = mod(result.x * screenCoords.x * nodeIndex * 0.01 + nodeIndex * 0.001 * screenCoords.y, 1);
+			traversal_status ts_ignore;
 			// Sample multiple times per pixel, in the cone that surrounds the pixel projected into the scene
 			for (int i = 0; i < normSamples; i++) {
 				vec3 normSample;
-				float rad = 0.5;//mod(result.x + i / float(normSamples) + nodeIndex * 0.001, 2);
+				float rad = 0.1 + mod(i / float(normSamples) * nodeIndex * 0.001, 0.9);
 				// Sample in a circle around the main ray, at a random radius
 				float angle = i * normSampleRot + initAngleOffset;
 				vec2 rayPixOffset = rad * vec2(cos(angle), sin(angle)) / screenRes;
 				r = computeCameraRay(screenCoords + rayPixOffset);
-				vec2 t_min_max = vec2(result.x - cellSize * 8, result.x + cellSize * 8); // vec2(0, 1e30);
+				vec2 t_min_max = vec2(result.x - normalRayLength * 0.5f, result.x + normalRayLength * 0.5f); // vec2(0, 1e30);
 				stack_size = 0;
-				vec4 normSampleRes = trace_ray(r, t_min_max, projectionFactor, normSample);
-				if (normSampleRes.x >= 0) {
+				vec4 normSampleRes = trace_ray(r, t_min_max, projectionFactor, normSample, ts_ignore);
+				if (normSampleRes.x >= 0 && distance(normSampleRes.x, result.x) <= normalRayLength) {
 					numNormSamplesHit++;
 					smoothNorm += normSample;
 				}
@@ -757,7 +761,7 @@ void main() {
 			t *= 0.5 + 0.5 * max(dot(hitNorm, lightDir), 0);
 
 			// Light fall-off
-			t -= 0.5 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+			// t -= 0.5 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
 			// Traversal depth (looks nice without beam opt)
 			// t *=  1. - (result.z / float(maxIters));
 		}
@@ -787,11 +791,24 @@ void main() {
 #endif
 		// Assign random colors based on the index of a node
 		else if (randomColors) {
-			vec3 randomColor = normalize(vec3(
-				(nodeIndex % 100) / 100.f,
-				((3 * nodeIndex) % 200) / 200.f,
-				((2 * nodeIndex) % 300) / 300.f
-			));
+			vec3 randomColor;
+
+			if (drawLevel == LEVELS - 1) { // for attribute DAG: attributes are at leaf level
+				// This node represents 8 voxels, each one has different attributes
+				// How do I find out which voxel of this node is intersected? Lets just pick the first one for now
+					
+				ts.child_linear_index = voxel_to_linear_idx(ts.mirror_mask, ts.local_idx, ts.current_node_size);
+				fetch_child_index_in(ts);
+				fetch_data(ts);
+
+				randomColor = vec3(ts.hdr / 255.);
+			} else {
+				randomColor = normalize(vec3(
+					(nodeIndex % 100) / 100.f,
+					((3 * nodeIndex) % 200) / 200.f,
+					((2 * nodeIndex) % 300) / 300.f
+				));
+			}
 			color *= randomColor;
 		} 
 
@@ -806,12 +823,13 @@ void main() {
 
 			r.o = p;
 			r.d = -normalize(lightToP);
-			vec2 t_min_max = vec2(epsilon, lightToPLength);
+			vec2 t_min_max = vec2(0, lightToPLength);
 			stack_size = 0; // not sure why it needs to be reset, but else it causes artifacts
-			vec4 shd_result = trace_ray(r, t_min_max * 0.5, sProjFactor, hitNorm);
+			traversal_status ts_ignore;
+			vec4 shd_result = trace_ray(r, t_min_max * 0.5, sProjFactor, hitNorm, ts_ignore);
 
 			// Add shadows
-			color *= (shd_result.x > 0) ? 0.5 : 1;
+			color *= (shd_result.x > 0) ? 0.8 : 1;
 //				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
 		}
 	}
@@ -825,7 +843,7 @@ void main() {
 		// else if (
 			|| result.x == -4.) // no intersection, out of BBox => background
 		{ 
-			color = 0.5 * (screenCoords.y + 1) * vec3(0.3,0.2,0.9);
+			color = vec3(1); // 0.5 * (screenCoords.y + 1) * vec3(0.3,0.2,0.9);
 		}
 		
 		else if (result.x == -3.) // too many iterations
@@ -846,7 +864,8 @@ void main() {
 	Ray r = computeCameraRay(screenCoords);	
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) : 0, 1e30);
 	vec3 norm;
-	vec4 result = trace_ray(r, t_min_max, projectionFactor, norm);
+	traversal_status ts_ignore;
+	vec4 result = trace_ray(r, t_min_max, projectionFactor, norm, ts_ignore);
 	if (result.x > 0) // Intersection!!!
 		output_t = result.xyz;
 	else
@@ -872,7 +891,8 @@ void main() {
 	vec2 t_min_max = vec2(0, lightToPLength);
 	const float projFactor = lightToPLength / cellSize;
 	vec3 norm;
-	vec4 result = trace_ray(r, t_min_max, projFactor, norm);
+	traversal_status ts_ignore;
+	vec4 result = trace_ray(r, t_min_max, projFactor, norm, ts_ignore);
 
 	output_t = (result.x > 0) ? 0.0 : 1.0;
 }
@@ -902,12 +922,14 @@ void main() {
 	const vec2 t_min_max = vec2(0,largo);
 	const float projFactor = largo / cellSize;
 	float k = 0;
+	
+	traversal_status ts_ignore;
 
 	for(int i=0; i<numAORays; i++) {
 		aoRay.d = normalize(tnb *  hsSamples[(i+int(gl_FragCoord.x*gl_FragCoord.y))%N_HS_SAMPLES]);
 		//aoRay.d = normalize(tnb *  hsSamples[i]);
 		vec3 norm;
-		vec4 result = trace_ray(aoRay, t_min_max, projFactor, norm);
+		vec4 result = trace_ray(aoRay, t_min_max, projFactor, norm, ts_ignore);
 		if(result.x > 0) k += 1.0;// - (result.x/0.3);
 	}
 	float visibility = (numAORays>0) ? 1.0 - (k/float(numAORays)) : 1.0;

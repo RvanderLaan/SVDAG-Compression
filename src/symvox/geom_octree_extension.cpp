@@ -1800,7 +1800,6 @@ void GeomOctree::hiddenGeometryFloodfill() {
                     // Add to queue to visit next
                     queue.push(nbTravNode);
                     // mark as being outside of any geometry in parent
-    //                nbP.setChildOutsideBit(nbTravNode.childIdx);
                     numOutsideLeafs++;
                 }
             }
@@ -1824,25 +1823,24 @@ void GeomOctree::hiddenGeometryFloodfill() {
         printf("Level %i: %.2f%% of SVO nodes outside\n", lev + 1, 100.0 * outsideNodes / (float) _data[lev + 1].size());
     }
 
-
-    // Check to see if floodfill works: Set all inside nodes to bitmask with 1
-#if 0
-    printf("DEBUG: Setting inside nodes to first node of level...\n");
+#if 1
+    printf("DEBUG: Setting inside nodes to empty...\n"); // first node of level
     for (int lev = _levels - 1; lev >= 0; --lev) {
         for (id_t nodeId = 0; nodeId < _data[lev].size(); ++nodeId) {
             Node &parent = _data[lev][nodeId];
             for (int c = 0; c < 8; ++c) {
-                if (!parent.existsChild(c) && !parent.getChildOutsideBit(c)) {
-                    parent.setChildBit(c);
-                    parent.children[c] = 0;
+                //if (!parent.existsChild(c) && !parent.getChildOutsideBit(c)) {
+                //    parent.setChildBit(c);
+                //    parent.children[c] = 0;
+                //}
+                if (parent.existsChild(c) && !parent.getChildOutsideBit(c)) {
+                    parent.unsetChildBit(c);
+                    parent.children[c] = nullNode;
                 }
-//                if (parent.existsChild(c) && parent.getChildOutsideBit(c)) {
-//                    _data[lev][nodeId].unsetChildBit(c);
-//                    _data[lev][nodeId].children[c] = 0;
-//                }
             }
         }
     }
+	cleanEmptyNodes();
 
 #endif
 
@@ -1898,7 +1896,7 @@ void GeomOctree::toHiddenGeometryDAG() {
     ///////////////////////////////////////////////////////
     // Todo: Other option: Modify SVO to an optimal state, so that we can call toDAG as usual
 
-    printf(" * - Converting to DAG:\n");
+    printf(" * - Converting to HSVDAG:\n");
     // Now perform toDAG and check for matches 256 times
     _nNodes = 1;
     std::vector<id_t> correspondences;
@@ -1952,8 +1950,8 @@ void GeomOctree::toHiddenGeometryDAG() {
 //            }
 
             // TODO: This is a brute force approach, just testing whether it works
-            for (id_t idB = 0; idB < _data[lev].size(); idB++) {
-                if (nodeIndex == idB) continue;
+            for (id_t idB = nodeIndex + 1; idB < _data[lev].size(); idB++) {
+                //if (nodeIndex == idB) continue;
 
                 Node nB = _data[lev][idB];
                 // Merge nodes if their visible children overlap. Choose node with least hidden children
@@ -1961,8 +1959,8 @@ void GeomOctree::toHiddenGeometryDAG() {
                 // Todo: Should we keep looking for a better match once one is found,
                 // or will the first match be matching to another node that this node can match to? I think so...
 
-                sl::uint8_t visibleChildrenA = ~n.outsideMask;
-                sl::uint8_t visibleChildrenB = ~nB.outsideMask;
+                sl::uint8_t visibleChildrenA = n.outsideMask;
+                sl::uint8_t visibleChildrenB = nB.outsideMask;
 
                 sl::uint8_t overlapVisChildren = visibleChildrenA & visibleChildrenB;
 
@@ -1985,12 +1983,12 @@ void GeomOctree::toHiddenGeometryDAG() {
                     for (int c = 0; c < 8; c++) {
                         // If there is a visible child, it needs to be identical, even if empty
                         if (checkBit(overlapVisChildren, c)) {
-                            if (replacerNode.existsChild(c)) {
+                            if (replacedNode.existsChild(c)) {
                                 if (replacedNode.children[c] != replacerNode.children[c]) {
                                     identicalVisibleChildren = false;
                                     break;
                                 }
-                            } else if (replacedNode.existsChild(c)) {
+                            } else if (replacerNode.existsChild(c)) {
                                 identicalVisibleChildren = false;
                                 break;
                             }
@@ -2017,16 +2015,32 @@ void GeomOctree::toHiddenGeometryDAG() {
 
         // Keep looking for correspondences until all have been resolved
         while (!unresolvedCorrespondences.empty()) {
+			
             // Correspondences are pointing to the old node list, now make them point to new nodes
             for (auto it = unresolvedCorrespondences.begin(); it != unresolvedCorrespondences.end(); it++) {
                 if (correspondences[it->second] != (id_t) -1) {
                     // the correspondence has been resolved
                     correspondences[it->first] = correspondences[it->second];
+
+					// Also point other nodes pointing to this node to its new correspondence
+					for (auto it2 = unresolvedCorrespondences.begin(); it2 != unresolvedCorrespondences.end(); it2++) {
+						if (it2->second == it->first) {
+							unresolvedCorrespondences[it2->first] = it->second;
+						}
+					}
+
+					//unresolvedCorrespondences.erase(it->first);
+
                 } else if (unresolvedCorrespondences.find(it->second) != unresolvedCorrespondences.end()) {
                     // the correspondence points to another unresolved correspondence
                     unresolvedCorrespondences[it->first] = unresolvedCorrespondences[it->second];
-                }
+				}
+				else {
+					printf("Node has neither a correspondence nor an unresolved correspondence: %u -> %u \n", it->first, it->second);
+					exit(-1);
+				}
             }
+
         }
 
 //        if (!iternalCall)
@@ -2117,3 +2131,27 @@ void GeomOctree::toHiddenGeometryDAG() {
     // - Use set intersections to find which nodes to compare to
 }
 
+
+
+void GeomOctree::toAttributeSVO() {
+    // Expects attributes to be in leaf children
+    // Will create one or more new levels below the leaves, containing attribute data
+
+    // only 8 attribute bits for now
+    _levels += 1;
+
+    _data.resize(_levels);
+
+    for (auto &n : _data[_levels - 2]) {
+        for (int i = 0; i < 8; i++) {
+			if (n.existsChild(i)) {
+				Node newLeaf;
+				newLeaf.childrenBitmask = n.children[i]; // child pointer contains attribute data
+				n.children[i] = _data[_levels - 1].size();
+				_data[_levels - 1].emplace_back(newLeaf);
+			}
+        }
+    }
+    _nNodes += _data[_levels - 1].size();
+    _nLeaves = _data[_levels - 1].size();
+}

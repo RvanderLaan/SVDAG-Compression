@@ -63,3 +63,17 @@ Question:
     - Wouldn't be useful for flat surfaces, but for organic material/smoke/particles
  
  
+# Attribute DAG v2
+ - Attributes are encoded as nodes below the geometry leaves
+ - option 1: 8 attribute bits encoded as an extra leaf level, e.g. grayscale
+   option 2: 8*8 attribute bits, as two extra levels, e.g.
+    - 1,2,3 RGB
+    - 4, 5  oct. normal
+    - 6     roughness
+    - 7     reflectance
+    - 8     transparency? idk
+ - lossy geometry compression should use a different difference metric for the attribute levels
+    even with gray codes, one bit difference can significantly change the value of the attribute
+        consequetive values only differ by one bit, but it matters a lot which bit changes
+    difference at attribute levels can simply be the difference between attribute values
+    topology filter is also more effective here

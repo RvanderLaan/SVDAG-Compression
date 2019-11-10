@@ -43,6 +43,7 @@ Scene::Scene() {
 
 	TMaterial defaultMat;
 	sprintf(defaultMat.name, "Voxelator Default Mat");
+	sprintf(defaultMat.texture, "");
 	defaultMat.ambientColor = sl::color3f(0.1, 0.1, 0.1);
 	defaultMat.diffuseColor = sl::color3f(0.9, 0.9, 0.9);
 	defaultMat.specColor = sl::color3f(0.2, 0.2, 0.2);
@@ -117,7 +118,12 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 			}
 			case 't': // tex coord
 			{
-				// Not dealing with this
+				// Yes dealing with this
+				if (loadMaterials) {
+					sl::vector2f v;
+					sscanf(str + 2, "%f %f", &v[0], &v[1]);
+					_texCoords.push_back(v);
+				}
 				break;
 			}
 			default: //vertex
@@ -151,10 +157,15 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 			itri.material = currentMat;
 			bool noNormal = false;
 			for (int i = 0; i < 3; ++i) {
-				int idxV=0, idxN=0;
-				int n = sscanf(triples[i].c_str(), "%d//%d", &idxV, &idxN);
+				int idxV = 0, idxT = 0, idxN = 0;
+				bool hasNormWithoutTex = triples[i].find("//") != std::string::npos;
+				int n = hasNormWithoutTex
+					? sscanf(triples[i].c_str(), "%d//%d", &idxV, &idxN)
+					: sscanf(triples[i].c_str(), "%d/%d/%d", &idxV, &idxT, &idxN);
+
 				// negative indices
 				if (idxV < 0) idxV = int(_vertices.size()) + idxV + 1;
+				if (idxT < 0) idxT = int(_texCoords.size()) + idxT + 1;
 				if (idxN < 0) idxN = int(_normals.size()) + idxN + 1;
 				if (n == 0) {
 					std::cout << "ERROR:Scene:loadObj: problem parsing face instruction" << std::endl;
@@ -162,10 +173,22 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 				else if (n == 1) { // just vertex info
 					itri.verticesIdx[i] = idxV - 1;
 					noNormal = true;
+					itri.texCoordIdx[i] = 0; // all texCoordIdx of 0 indicates that this triangle does not have a tex
 				}
-				else if (n == 2) { // vertex and normal info
+				else if (n == 2 && hasNormWithoutTex) { // vertex and normal info
 					itri.verticesIdx[i] = idxV - 1;
 					if (!recomputeNormals) itri.normalsIdx[i] = idxN - 1;
+					itri.texCoordIdx[i] = 0;
+				}
+				else if (n == 2) { // vertex and tex coord info
+					itri.verticesIdx[i] = idxV - 1;
+					if (loadMaterials) itri.texCoordIdx[i] = idxT - 1;
+					noNormal = true;
+				}
+				else { // vertex, normal and tex info
+					itri.verticesIdx[i] = idxV - 1;
+					if (!recomputeNormals) itri.normalsIdx[i] = idxN - 1;
+					if (loadMaterials) itri.texCoordIdx[i] = idxT - 1;
 				}
 			}
 
@@ -211,8 +234,11 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 				_indexedTris.push_back(itri);
 				_nTris++;
 
+				// TODO: Fix texture coordinates for quads. Not dealing with this now, just assume the model is triangulated
+				if (loadMaterials) {
+					printf("This model has quads. Tex coords are currently not supported. Idk what will happen \n");
+				}
 			}
-
 			break;
 		}
 		case 'm': { // mtllib
@@ -230,9 +256,10 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 			if (loadMaterials) {
 				std::string mtlName(str + 7);
 				mtlName.resize(mtlName.size() - 1);
+
 				bool found = false;
 				for (std::size_t i = 0; i < _materials.size(); i++) {
-					if (_materials[i].name == mtlName) {
+					if (strncmp(_materials[i].name, mtlName.c_str(), mtlName.size()) == 0) {
 						currentMat = i;
 						found = true;
 						break;
@@ -266,6 +293,7 @@ void Scene::loadObj(std::string fileName, bool tryLoadBinCache, bool loadMateria
 		printf("OK!\n");
 	}
 }
+
 
 
 bool Scene::loadObjMtlLib(std::string fileName) {
@@ -314,6 +342,11 @@ bool Scene::loadObjMtlLib(std::string fileName) {
 		else if (cmd == "d" || cmd == "Ts") {
 			ss >> mat->transparency;
 		}
+		else if (cmd == "map_Kd") { // diffuse texture
+			ss >> tmp;
+			// Todo: Take into account arguments (e.g. map_Kd -bm 0.55 tex.jpg)
+			strcpy(mat->texture, tmp.c_str());
+		}
 	}
 	if (mat)  _materials.push_back(*mat);
 	printf("OK! (%zu materials loaded)] ", _materials.size());
@@ -327,6 +360,7 @@ void Scene::saveBinObj(std::string filename) {
 	header.nVertices = _vertices.size();
 	header.nNormals = _normals.size();
 	header.nMaterials = _materials.size();
+	header.nTexCoords = _texCoords.size();
 	header.nIndexedTris = _indexedTris.size();
 	header.bboxMin[0] = _bbox[0][0];
 	header.bboxMin[1] = _bbox[0][1];
@@ -343,9 +377,7 @@ void Scene::saveBinObj(std::string filename) {
 	file.write((char*)&_materials[0], _materials.size() * sizeof(TMaterial));
 	file.write((char*)&_indexedTris[0], _indexedTris.size() * sizeof(TIndexedTri));
 
-	
 	file.close();
-	
 }
 
 void Scene::loadBinObj(std::string filename) {
@@ -366,6 +398,9 @@ void Scene::loadBinObj(std::string filename) {
 
 	_materials.resize(header.nMaterials);
 	file.read((char *)(&_materials[0]), header.nMaterials*sizeof(TMaterial));
+
+	_texCoords.resize(header.nTexCoords);
+	if (header.nTexCoords > 0) file.read((char *)(&_texCoords[0]), header.nTexCoords * sizeof(sl::vector2f));
 
 	_indexedTris.resize(header.nIndexedTris);
 	file.read((char *)(&_indexedTris[0]), header.nIndexedTris*sizeof(TIndexedTri));
@@ -408,10 +443,14 @@ void Scene::buildTriVector(bool clearOtherData) {
 		_vertices.shrink_to_fit();
 		_normals.clear();
 		_normals.shrink_to_fit();
-		_materials.clear();
-		_materials.shrink_to_fit();
-		_indexedTris.clear();
-		_indexedTris.shrink_to_fit();
+
+		// Materials and texture info are still needed
+		// Todo: Might also need to keep normals when encoding those at attributes in the DAG
+
+		//_materials.clear();
+		//_materials.shrink_to_fit();
+		//_indexedTris.clear();
+		//_indexedTris.shrink_to_fit();
 	}
 }
 

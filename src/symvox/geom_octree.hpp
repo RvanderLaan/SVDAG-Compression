@@ -122,12 +122,13 @@ public:
     void toDAG(bool internalCall = false);
     void toSDAG(bool internalCall = false, bool skipSymmetry = false);
 	void toSDAGCanonical();
-    void toHiddenGeometryDAG();
 
 	// Extensions
     void toLossyDag(float lossyInflation, float allowedLossyDiffFactor, int includedNodeRefCount);
     unsigned int mergeAcrossAllLevels();
     void symMergeAcrossAllLevels();
+    void toHiddenGeometryDAG();
+		void toAttributeSVO();
 
     // External helpers
     void initChildLevels();

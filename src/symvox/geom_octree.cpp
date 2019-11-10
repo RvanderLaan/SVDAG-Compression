@@ -154,6 +154,18 @@ void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, s
 #endif
 }
 
+/*
+ * This function converts an unsigned binary
+ * number to reflected binary Gray code.
+ *
+ * The operator >> is shift right. The operator ^ is exclusive or.
+ *
+ * From https://en.wikipedia.org/wiki/Gray_code#Converting_to_and_from_Gray_code
+ */
+unsigned int BinaryToGray(unsigned int num) {
+    return num ^ (num >> 1);
+}
+
 void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves) {
 
     if (!internalCall) printf("* Building SVO... ");
@@ -183,6 +195,12 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
     };
     sl::point3d childrenCenters[8];
     std::stack<QueueItem> queue;
+
+		// Attribute parsing utils
+		auto &materials = *_scene->getMaterials();
+    float u, v, w; // barycentric coords
+    sl::vector3f color; // temp color container
+    sl::vector2f t0, t1, t2; // temp tex coord containers
 
     if (!internalCall) _clock.restart();
 
@@ -235,12 +253,54 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                     if ((qi.level + 1U) < _levels)
                         queue.push(QueueItem(node.children[i], qi.level + 1, childrenCenters[i]));
                     else {
-                        if (putMaterialIdInLeaves) node.children[i] = (id_t) triMatId;
+											// If it's a leaf, do nothing unless we want attribute data here
+                        if (putMaterialIdInLeaves && node.children[i] == nullNode) {
+                            sl::uint8_t attr; // todo: only 1 uint8 for now (gray scale), later we can add more channels
+														// sl::uint64_t attr; // like this for example
+
+                            const auto& material = materials[triMatId];
+                            std::string texName(material.texture);
+
+                            // Check if triangle has texture
+                            if (this->_scene->isTriangleTextured(iTri) && !texName.empty()) {
+                                // Compute barycentric coordinates of the center of this voxel to this triangle
+                                barycentric(qi.center, _scene->getTrianglePtr(iTri), u, v, w);
+
+                                // Use that to find the texture coordinates of that point on the texture
+                                _scene->getTriangleTexCoords(iTri, t0, t1, t2);
+                                sl::vector2f voxTexCoords = u * t0 + v * t1 + w * t2;
+
+                                // Look up texture color at those coordinates
+                                // TODO: Use texture LOD or bigger sample size depending on size ratio of triangle to voxel
+                                _scene->getTexColor(texName, voxTexCoords, color);
+//                                printf("Tri# %i: \tuv: %.2f \t%.2f \t - Attr: %.2f\n", iTri, voxTexCoords[0], voxTexCoords[1], f);
+                            } else {
+                                color = materials[triMatId].diffuseColor;
+                            }
+
+
+                            // Average of RGB: Gray scale
+                            float f = (color[0] + color[1] + color[2]) / 3.;
+                            // Todo: try both for binary and for gray code
+                            attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
+                            // attr = BinaryToGray(attr);
+
+                            // Todo: For more than 1 attribute, use a vector of attributes
+                            // this->attributes.push_back(attr);
+
+
+                            // For now, just put it in children
+                            node.children[i] = (id_t) attr;
+                        }
+											
 #if 0 // outputs a debug obj of voxels as points with their colours
+                        if (putMaterialIdInLeaves) node.children[i] = (id_t) triMatId;
                         sl::color3f c;
                         _scene->getTriangleColor(iTri, c);
                         printf("v %f %f %f %f %f %f\n", childrenCenters[i][0], childrenCenters[i][1], childrenCenters[i][2], c[0], c[1], c[2]);
 #endif
+
+
                     }
                 }
             }

@@ -104,6 +104,7 @@ INCLUDE_DIRECTORIES( ${OPENGL_INCLUDE_DIRS} )
 INCLUDE_DIRECTORIES( ${GLFW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${GLEW_INCLUDE_DIR} )
 INCLUDE_DIRECTORIES( ${LIBLAS_INCLUDE_DIRS} )
+INCLUDE_DIRECTORIES( "${PROJECT_SOURCE_DIR}/include" )
 
 #############################################################
 ##################### SYMVOX LIBRARY ###########################
@@ -136,7 +137,6 @@ ADD_LIBRARY( symvox
 
 TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
 
-
 #############################################################
 ####################### SYMVOX BUILDER #########################
 #############################################################
@@ -144,6 +144,13 @@ TARGET_LINK_LIBRARIES(symvox ${SL_LIBRARIES} ${LIBLAS_LIBRARIES})
 ADD_EXECUTABLE( svbuilder
 	src/svbuilder/main.cpp
 )
+
+if(UNIX)
+    set(ADDITIONAL_LIBRARIES X11 m pthread) # X11 is needed for CImg (textures) in the builder
+else()
+    set(ADDITIONAL_LIBRARIES "")
+endif()
+
 TARGET_LINK_LIBRARIES(svbuilder symvox)
 
 #############################################################

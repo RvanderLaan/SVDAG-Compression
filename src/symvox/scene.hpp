@@ -22,14 +22,21 @@
 #include <vector>
 #include <string>
 
+#include <CImg.h>
+using namespace cimg_library;
+
 #include <sl/fixed_size_point.hpp>
 #include <sl/fixed_size_vector.hpp>
 #include <sl/axis_aligned_box.hpp>
+
+#include <symvox/test_triangle_box.hpp>
+
 
 class Scene {
 public:
 	typedef struct _Material {
 		char name[256];
+		char texture[256];
 		sl::color3f diffuseColor;
 		sl::color3f specColor;
 		sl::color3f ambientColor;
@@ -39,6 +46,7 @@ public:
 
 	typedef struct _IndexedTri {
 		std::size_t verticesIdx[3];
+		std::size_t texCoordIdx[3];
 		std::size_t normalsIdx[3];
 		std::size_t material;
 	} TIndexedTri;
@@ -58,6 +66,7 @@ public:
 	inline std::vector<sl::point3f> * getVertices() { return &_vertices; }
 	inline std::vector<sl::vector3f> * getNormals() { return &_normals; }
 	inline std::vector<TMaterial> * getMaterials() { return &_materials; }
+	inline std::vector<sl::vector2f> * getTexCoords() { return &_texCoords; }
 	inline std::vector<TIndexedTri> * getIndexedGeom() { return &_indexedTris; }
 
 	inline std::size_t getNTriangles() { return _indexedTris.size()>0 ? _indexedTris.size() : _triangles.size(); }
@@ -83,6 +92,36 @@ public:
 	inline size_t getTriangleMaterialId(std::size_t idTri) {
 		return (idTri < _indexedTris.size()) ? _indexedTris[idTri].material : 0;
 	}
+	inline void getTriangleTexCoords(std::size_t idTri, sl::vector2f & t0, sl::vector2f & t1, sl::vector2f & t2) {
+			t0 = _texCoords[_indexedTris[idTri].texCoordIdx[0]];
+			t1 = _texCoords[_indexedTris[idTri].texCoordIdx[1]];
+			t2 = _texCoords[_indexedTris[idTri].texCoordIdx[2]];
+	}
+	inline bool isTriangleTextured(std::size_t idTri) {
+		return _indexedTris[idTri].texCoordIdx[0] != 0
+				&& _indexedTris[idTri].texCoordIdx[1] != 0
+				&& _indexedTris[idTri].texCoordIdx[2] != 0;
+	}
+	inline void getTexColor(const std::string texName, const sl::vector2f & uv, sl::color3f & c) {
+		if (_textures.count(texName) == 0) {
+				printf("Texture not found: '%s'\n", texName.c_str());
+				return;
+		}
+			const auto& texture = _textures[texName];
+		int w = texture.width();
+		int h = texture.height();
+		int x = clamp(uv[0] * w, 0, w - 1);
+		int y = clamp(uv[1] * h, 0, h - 1);
+
+		// Todo: this assumes the texture is RGB
+		unsigned char r = texture(x, y, 0);
+		unsigned char g = texture(x, y, 1);
+		unsigned char b = texture(x, y, 2);
+
+		c[0] = ((float) r) / 255.0;
+		c[1] = ((float) g) / 255.0;
+		c[2] = ((float) b) / 255.0;
+	}
 
 	void saveBinObj(std::string filename);
 	void loadBinObj(std::string filename);
@@ -92,10 +131,29 @@ public:
 
 	void testOutput(std::string filename);
 
+	inline void loadTextures(std::string path) {
+	    //_textures.clear();
+	    int matIndex = -1;
+	    for (const auto & material : _materials) {
+            ++matIndex;
+	        if (matIndex == 0) continue;
+	        std::string texName(material.texture);
+	        if (texName.size() > 3 && this->_textures.count(texName) == 0) {
+	            // TODO: Check if absolute or relative path - now assumes relative
+	            printf("Loading texture '%s' of material '%s'...\n", texName.c_str(), material.name);
+                std::string texPath = path + "/" + texName;
+                std::replace(texPath.begin(), texPath.end(), '\\', '/');
+                CImg<unsigned char> texture(texPath.c_str());
+                this->_textures[texName] = texture;
+	        }
+	    }
+	}
+
 private:
 	std::vector <sl::point3f> _vertices;
 	std::vector <sl::vector3f> _normals;
 	std::vector < TMaterial > _materials;
+	std::vector <sl::vector2f> _texCoords;
 	std::vector < TIndexedTri > _indexedTris;
 
 	// optional
@@ -107,12 +165,15 @@ private:
 	std::size_t _nTris;
 	sl::aabox3f _bbox;
 
+	std::map<std::string, CImg<unsigned char>> _textures;
+
 
 private:
 	typedef struct {
 		size_t nVertices;
 		size_t nNormals;
 		size_t nMaterials;
+		size_t nTexCoords;
 		size_t nIndexedTris;
 		float bboxMin[3];
 		float bboxMax[3];
