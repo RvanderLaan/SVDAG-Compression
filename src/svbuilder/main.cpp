@@ -21,6 +21,8 @@
 #include <fstream>
 #include <string.h>
 
+#include <stdio.h>
+
 #include <symvox/scene.hpp>
 #include <symvox/geom_octree.hpp>
 #include <symvox/encoded_svo.hpp>
@@ -155,7 +157,7 @@ int main(int argc, char ** argv) {
         svo.encode(octree);
 		if (exploitHiddenGeom) {
             octree.hiddenGeometryFloodfill();
-//            octree.toHiddenGeometryDAG();
+            octree.toHiddenGeometryDAG();
 		}
 
 		octree.toDAG();
@@ -166,6 +168,7 @@ int main(int argc, char ** argv) {
 	}
 
 	// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
+	// TODO: When scene origin point is inside bbox, weird lines appear along all axes. Maybe fix by moving bbox start to origin?
 	float bboxSize = scene.getAABB()[0].distance_to(scene.getAABB()[1]);
 	float maxBboxSize = 100000.f;
 	if (bboxSize > maxBboxSize || bboxSize < 0.1) {
@@ -307,7 +310,12 @@ int main(int argc, char ** argv) {
 	// Print to console and to stats file
 	for (int i = 0; i < 2; i++) {
 		if (i == 1) {
+// Print to file
+#if WIN32
+			freopen("stats.txt", "a", stdout);
+#else
 			stdout = fopen("stats.txt", "a");
+#endif
 		}
 		printf("%s, %d, lossy: %d, cross-level: %d\n", baseName.c_str(), nLevels, lossy, multiLevel);
 		printf("#Voxels, %zu\n", stats.nTotalVoxels);
@@ -338,7 +346,14 @@ int main(int argc, char ** argv) {
 		printf("\n\n");
 	}
 	fclose(stdout);
+
+	// Restore stdout to default
+#if WIN32
+	freopen("CONOUT$", "w", stdout);
+#else
 	stdout = baseStdout;
+#endif
+
 
 	return 0;
 }

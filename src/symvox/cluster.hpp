@@ -14,6 +14,7 @@
 #include <sstream>
 #include <omp.h>
 #include <assert.h>
+#include <iterator>
 
 class cluster {
 
