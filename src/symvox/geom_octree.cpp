@@ -270,6 +270,13 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                                 _scene->getTriangleTexCoords(iTri, t0, t1, t2);
                                 sl::vector2f voxTexCoords = u * t0 + v * t1 + w * t2;
 
+								float x = voxTexCoords[0];
+								// Fix for tiled textures, mod between 0 and 1
+								voxTexCoords[0] = std::fmod(std::fmod(voxTexCoords[0], 1.f) + 1.f, 1.f);
+								voxTexCoords[1] = std::fmod(std::fmod(voxTexCoords[1], 1.f) + 1.f, 1.f);
+								
+								
+
                                 // Look up texture color at those coordinates
                                 // TODO: Use texture LOD or bigger sample size depending on size ratio of triangle to voxel
                                 _scene->getTexColor(texName, voxTexCoords, color);
@@ -283,7 +290,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                             float f = (color[0] + color[1] + color[2]) / 3.;
                             // Todo: try both for binary and for gray code
                             attr = sl::uint8_t(floor(f >= 1.0 ? 255 : f * 255.0));
-                            // attr = BinaryToGray(attr);
+                            attr = BinaryToGray(attr);
 
                             // Todo: For more than 1 attribute, use a vector of attributes
                             // this->attributes.push_back(attr);
