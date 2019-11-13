@@ -11,7 +11,9 @@ It includes
 Most of these implementations are contained in `src/symvox/geom_octree_extension.cpp`, though the rest of the project has been adjusted here and there as well.
 The viewer application (svviewer) has been extended with a GUI, diffuse lighting, hard shadows and some debugging view modes.
 
-The accompanying MSc thesis report will be available soon.
+The accompanying MSc thesis report can be found [here](https://repository.tudelft.nl/islandora/object/uuid:83057534-111d-43bc-84f3-67a6ffe1af3b?collection=education).
+For additional information or questions, I would be happy to answer those through e-mail: `rrm.remi {AT} gmail.com`.
+
 
 ## Instructions
 Follow the instructions of the original readme for the initial setup.
@@ -99,5 +101,5 @@ Two additional optional requirements can be installed:
 	http://vic.crs4.it
 	
 	For technical questions, you can contact directly 
-	Alberto Jaspe Villanueva [ ajaspe@crs4.it ]
+	Alberto Jaspe Villanueva [ ajaspe {AT} crs4.it ]
 
