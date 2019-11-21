@@ -375,6 +375,7 @@ void Scene::saveBinObj(std::string filename) {
 	file.write((char*)&_vertices[0], _vertices.size() * sizeof(sl::point3f));
 	if (_normals.size() > 0) file.write((char*)&_normals[0], _normals.size() * sizeof(sl::vector3f));
 	file.write((char*)&_materials[0], _materials.size() * sizeof(TMaterial));
+	if (_texCoords.size() > 0) file.write((char*)&_texCoords[0], _texCoords.size() * sizeof(sl::vector2f));
 	file.write((char*)&_indexedTris[0], _indexedTris.size() * sizeof(TIndexedTri));
 
 	file.close();

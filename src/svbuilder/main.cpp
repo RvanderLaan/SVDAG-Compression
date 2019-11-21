@@ -167,15 +167,14 @@ int main(int argc, char ** argv) {
             octree.toHiddenGeometryDAG();
 		}
 
-		if (attributes) {
-			octree.toAttributeSVO();
-		}
-
 		octree.toDAG();
-
 	}
 	else {
-		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
+		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true, attributes);
+	}
+
+	if (attributes) {
+		octree.toAttributeSVO();
 	}
 
 	// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
