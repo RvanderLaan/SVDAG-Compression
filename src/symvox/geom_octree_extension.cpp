@@ -164,7 +164,7 @@ void GeomOctree::buildHiddenGeomMultiMap(std::vector<std::multimap<uint64_t, id_
 
             unsigned int bitsToToggle = (~node.outsideMask) & origChildMask;
             unsigned int numBitsToToggle = 0;
-            unsigned int bitOffsets[numBitsToToggle];
+            unsigned int bitOffsets[8];
             for (unsigned int i = 0; i < 8; ++i) {
                 if (checkBit(bitsToToggle, i)) {
                     bitOffsets[numBitsToToggle++] = i;
