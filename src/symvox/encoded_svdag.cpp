@@ -282,7 +282,6 @@ GeomOctree EncodedSVDAG::decode(Scene &scene) {
 
 	// GeomOctree octrea(data, state, stats, _sceneBBox, _rootSide, _levels, scene, n)
 	GeomOctree octree(data, _sceneBBox, _rootSide, _levels, stats);
-	printf("Lvls??: %i", octree.getLevels());
 	return octree;
 }
 
