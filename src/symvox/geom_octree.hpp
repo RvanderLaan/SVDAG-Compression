@@ -106,7 +106,7 @@ private: ///////////// Private attributes
 public:
 	GeomOctree(Scene * scene);
 	GeomOctree(const GeomOctree &other);
-	GeomOctree(const NodeData &data, State &state, Stats &stats, sl::aabox3f _bbox, double _rootSide, unsigned int _levels, Scene * _scene, size_t _nVoxels, size_t nNodes, size_t nLeaves);
+	GeomOctree(const NodeData &data, sl::aabox3f _bbox, double _rootSide, unsigned int _levels, GeomOctree::Stats _stats);
 	
 	// Gettters & Setters
 	inline void setScene(Scene * scene) { _scene = scene; }

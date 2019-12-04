@@ -81,8 +81,10 @@ int main(int argc, char ** argv) {
 	ck.restart();
 
 	Scene scene;
+	GeomOctree octree(&scene);
 
     bool isLas = false;
+	bool isInputDAG = false;
 
 	if (strstr(inputFile.c_str(), ".obj") || strstr(inputFile.c_str(), ".OBJ")) {
 		scene.loadObj(inputFile, true, false, false, false, true);
@@ -92,12 +94,15 @@ int main(int argc, char ** argv) {
     } else if (strstr(inputFile.c_str(), ".laz") || strstr(inputFile.c_str(), ".LAZ")) {
         scene.loadLas(inputFile);
         isLas = true;
+	} else if (strstr(inputFile.c_str(), ".svdag")) {
+		EncodedSVDAG inputSVDAG;
+		inputSVDAG.load(inputFile);
+		octree = inputSVDAG.decode(scene);
+		isInputDAG = true;
 	} else {
 		printf("Can't read input file '%s'. Only supported ASCII Obj files.\n", inputFile.c_str());
 		exit(1);
 	}
-
-	// TODO: Load encoded SVDAG as octree, so lossy compression can be experimented with more quickly - no need for voxelization each time
 
     bool lossy = false;
 	bool multiLevel = false;
@@ -139,60 +144,61 @@ int main(int argc, char ** argv) {
 
 	printf("Lossy: %d, Cross-level: %d, Hidden geom: %d\n", lossy, multiLevel, exploitHiddenGeom);
 
-	GeomOctree octree(&scene);
+	if (!isInputDAG) {
 
-	//sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
-	auto minF = scene.getAABB()[0],
-		 maxF = scene.getAABB()[1];
+		//sl::aabox3d sceneBBoxD = sl::conv_to<sl::aabox3d>::from(scene.getAABB());
+		auto minF = scene.getAABB()[0],
+			 maxF = scene.getAABB()[1];
 
-	sl::point3d minD = sl::point3d(minF[0], minF[1], minF[2]);
-	sl::point3d maxD = sl::point3d(maxF[0], maxF[1], maxF[2]);
-	sl::aabox3d sceneBBoxD = sl::aabox3d(minD, maxD);
+		sl::point3d minD = sl::point3d(minF[0], minF[1], minF[2]);
+		sl::point3d maxD = sl::point3d(maxF[0], maxF[1], maxF[2]);
+		sl::aabox3d sceneBBoxD = sl::aabox3d(minD, maxD);
 
-	EncodedSVO svo;
-	if (levelStep == 0) {
-        if (!isLas) {
-            octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
-        } else {
-            octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
-        }
-        svo.encode(octree);
-		if (exploitHiddenGeom) {
-            octree.hiddenGeometryFloodfill();
-            octree.toHiddenGeometryDAG();
+		EncodedSVO svo;
+		if (levelStep == 0) {
+			if (!isLas) {
+				octree.buildSVO(nLevels, sceneBBoxD, false, NULL, false);
+			} else {
+				octree.buildSVOFromPoints(inputFile, nLevels, sceneBBoxD, false, NULL);
+			}
+			svo.encode(octree);
+			if (exploitHiddenGeom) {
+				octree.hiddenGeometryFloodfill();
+				octree.toHiddenGeometryDAG();
+			}
+
+			octree.toDAG();
+        
+		}
+		else {
+			octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
 		}
 
-		octree.toDAG();
-        
-	}
-	else {
-		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true);
-	}
+		// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
+		// TODO: When scene origin point is inside bbox, weird lines appear along all axes. Maybe fix by moving bbox start to origin?
+		float bboxSize = scene.getAABB()[0].distance_to(scene.getAABB()[1]);
+		float maxBboxSize = 100000.f;
+		if (bboxSize > maxBboxSize || bboxSize < 0.1) {
+			std::cout << "Normalizing bbox; too small/large: " + std::to_string(bboxSize) + ". Initially: " << scene.getAABB() << std::endl;
+			sl::vector3f newBboxMax = (scene.getAABB()[1] - scene.getAABB()[0]).ok_normalized();
+			newBboxMax = maxBboxSize * newBboxMax; // Normalize * 1000
+			std::cout << "Corrected BBOX: " << newBboxMax << std::endl;
+			scene.setAABB(
+				sl::aabox3f(
+					sl::point3f(0, 0, 0),
+					sl::point3f(newBboxMax[0], newBboxMax[1], newBboxMax[2])
+				)
+			);
+			octree.resizeSceneBbox(scene.getAABB());
+		}
 
-	// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
-	// TODO: When scene origin point is inside bbox, weird lines appear along all axes. Maybe fix by moving bbox start to origin?
-	float bboxSize = scene.getAABB()[0].distance_to(scene.getAABB()[1]);
-	float maxBboxSize = 100000.f;
-	if (bboxSize > maxBboxSize || bboxSize < 0.1) {
-		std::cout << "Normalizing bbox; too small/large: " + std::to_string(bboxSize) + ". Initially: " << scene.getAABB() << std::endl;
-		sl::vector3f newBboxMax = (scene.getAABB()[1] - scene.getAABB()[0]).ok_normalized();
-		newBboxMax = maxBboxSize * newBboxMax; // Normalize * 1000
-		std::cout << "Corrected BBOX: " << newBboxMax << std::endl;
-		scene.setAABB(
-			sl::aabox3f(
-				sl::point3f(0, 0, 0),
-				sl::point3f(newBboxMax[0], newBboxMax[1], newBboxMax[2])
-			)
-		);
-		octree.resizeSceneBbox(scene.getAABB());
+	#if 0 // DEBUG TEST
+		if (!octree.checkIntegrity()) {
+			printf("Something wrong!\n");
+			return 1;
+		}
+	#endif
 	}
-
-#if 0 // DEBUG TEST
-	if (!octree.checkIntegrity()) {
-		printf("Something wrong!\n");
-		return 1;
-	}
-#endif
 
     octree.initChildLevels();
 
@@ -267,7 +273,7 @@ int main(int argc, char ** argv) {
 	for (int i = 4; i < argc; ++i) {
 		std::string outputFile = argv[i];
 		if     (strstr(outputFile.c_str(), ".svo") || strstr(outputFile.c_str(), ".SVO")) {
-			if (levelStep == 0) svo.save(outputFile);
+			//if (levelStep == 0) svo.save(outputFile);
 		}
 		else if (strstr(outputFile.c_str(), ".svdag") || strstr(outputFile.c_str(), ".SVDAG")) {
 			svdag.save(outputFile);
@@ -297,7 +303,7 @@ int main(int argc, char ** argv) {
 	printf("DAG Nodes:  %s\t(%zu)\n", sl::human_readable_quantity(stats.nNodesDAG).c_str(), stats.nNodesDAG);
 	printf("SDAG Nodes: %s\t(%zu)\n", sl::human_readable_quantity(stats.nNodesSDAG).c_str(), stats.nNodesSDAG);
 	printf("Pointerless SVO    : %s\t(%.3f bits/vox)\n", sl::human_readable_size(stats.nNodesSVO).c_str(), (8 * stats.nNodesSVO) / float(octree.getNVoxels()));
-	if(levelStep == 0) printf("Encoded SVO       : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svo.getDataSize()).c_str(), (8 * svo.getDataSize()) / float(octree.getNVoxels()));
+	//if(levelStep == 0) printf("Encoded SVO       : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svo.getDataSize()).c_str(), (8 * svo.getDataSize()) / float(octree.getNVoxels()));
 	printf("Encoded SVDAG      : %s\t(%.3f bits/vox)\n", sl::human_readable_size(svdag.getDataSize()).c_str(),  (8 * svdag.getDataSize())   / float(octree.getNVoxels()));
 	printf("Encoded ESVDAG     : %s\t(%.3f bits/vox)\n", sl::human_readable_size(esvdag.getDataSize()).c_str(), (8 * esvdag.getDataSize()) / float(octree.getNVoxels()));
 	printf("Encoded USSVDAG    : %s\t(%.3f bits/vox)\n", sl::human_readable_size(ussvdag.getDataSize()).c_str(), (8 * ussvdag.getDataSize()) / float(octree.getNVoxels()));

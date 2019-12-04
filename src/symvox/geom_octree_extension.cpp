@@ -324,7 +324,7 @@ void GeomOctree::diffSubtrees(
 
         // If the child bits don't match, compare...
         if (nA.existsChild(i) != nB.existsChild(i)) {
-            int diff = nA.existsChild(i) ? getNumVoxels(levA, nA) : getNumVoxels(levB, nB);
+            //int diff = nA.existsChild(i) ? getNumVoxels(levA, nA) : getNumVoxels(levB, nB);
             if (levA == _levels - 2) {
                 unsigned int leafDiff = 0;
                 numLeaves++;
