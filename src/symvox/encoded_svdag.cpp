@@ -214,18 +214,42 @@ GeomOctree EncodedSVDAG::decode(Scene &scene) {
 	GeomOctree::NodeData data(_levels);
 
 	// Start with root node
-	data[0].emplace_back(decodeNode(0, 0));
+	//data[0].emplace_back(decodeNode(0, 0));
 
 	// Create list of nodes per level instead of single list of nodes from encoded SVDAG
 	// put nodes into data of next level for every child recursively
-	printf("Decoding nodes...\n");
-	for (int lev = 0; lev < _levels - 1; lev++) {
-		// This would have worked if it were an octree... but now it seems to add nodes several times!
-		for (GeomOctree::id_t nodeIndex = 0; nodeIndex < data[lev].size(); ++nodeIndex) {
-			const auto *n = &data[lev][nodeIndex];
-			for (int c = 0; c < 8; ++c) {
-				if (n->existsChildPointer(c)) {
-					data[lev + 1].emplace_back(decodeNode(n->children[c], lev));
+	// This would have worked if it were an octree... but now it seems to add nodes several times!
+	//printf("Decoding nodes...\n");
+	//for (int lev = 0; lev < _levels - 1; lev++) {
+	//	for (GeomOctree::id_t nodeIndex = 0; nodeIndex < data[lev].size(); ++nodeIndex) {
+	//		const auto *n = &data[lev][nodeIndex];
+	//		for (int c = 0; c < 8; ++c) {
+	//			if (n->existsChildPointer(c)) {
+	//				data[lev + 1].emplace_back(decodeNode(n->children[c], lev));
+	//			}
+	//		}
+	//	}
+	//}
+
+	// new approach: Just loop over all nodes, keeping track of which level we're at manually
+	int lev = 0;
+
+	std::vector<unsigned int> levStarts(_levels, -1);
+	levStarts[0] = 0;
+
+	for (unsigned int i = 0; i < _data.size(); i++) {
+		if (lev < _levels - 1 && i == levStarts[lev + 1]) {
+			lev++;
+		}
+		auto n = decodeNode(i, lev);
+		data[lev].emplace_back(n);
+
+
+		if (lev < _levels - 1) {
+			i += n.getNChildren();
+			for (int c = 0; c < 8; c++) {
+				if (n.existsChild(c) && n.children[c] < levStarts[lev + 1]) {
+					levStarts[lev + 1] = n.children[c];
 				}
 			}
 		}
