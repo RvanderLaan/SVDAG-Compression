@@ -202,7 +202,7 @@ GeomOctree::Node EncodedSVDAG::decodeNode(GeomOctree::id_t index, int lev) {
 		int childCount = 0;
 		for (int i = 0; i < 8; i++) {
 			if (node.existsChild(i)) {
-				node.children[childCount] = _data[index + childCount + 1];
+				node.children[i] = _data[index + childCount + 1];
 				childCount++;
 			}
 		}
@@ -213,63 +213,58 @@ GeomOctree::Node EncodedSVDAG::decodeNode(GeomOctree::id_t index, int lev) {
 GeomOctree EncodedSVDAG::decode(Scene &scene) {
 	GeomOctree::NodeData data(_levels);
 
-	// Start with root node
-	//data[0].emplace_back(decodeNode(0, 0));
-
-	// Create list of nodes per level instead of single list of nodes from encoded SVDAG
-	// put nodes into data of next level for every child recursively
-	// This would have worked if it were an octree... but now it seems to add nodes several times!
-	//printf("Decoding nodes...\n");
-	//for (int lev = 0; lev < _levels - 1; lev++) {
-	//	for (GeomOctree::id_t nodeIndex = 0; nodeIndex < data[lev].size(); ++nodeIndex) {
-	//		const auto *n = &data[lev][nodeIndex];
-	//		for (int c = 0; c < 8; ++c) {
-	//			if (n->existsChildPointer(c)) {
-	//				data[lev + 1].emplace_back(decodeNode(n->children[c], lev));
-	//			}
-	//		}
-	//	}
-	//}
-
-	// new approach: Just loop over all nodes, keeping track of which level we're at manually
+	// loop over all encoded nodes & keep track of which level we're at manually
 	int lev = 0;
 
-	std::vector<unsigned int> levStarts(_levels, -1);
+	std::vector<unsigned int> levStarts(_levels, -1); // keep track of starting positions per level, starting at MAX_UINT
 	levStarts[0] = 0;
 
+
+	unsigned int numPtrs = 0;
+	std::vector<std::map<unsigned int, unsigned int>> numPtrsBeforeNode(_levels);
+
+	printf("Decoding nodes...\n");
 	for (unsigned int i = 0; i < _data.size(); i++) {
-		if (lev < _levels - 1 && i == levStarts[lev + 1]) {
+		if (lev < (int) _levels - 1 && i == levStarts[lev + 1]) { // if the start of the next level has been reached, increment lev
 			lev++;
+			numPtrs = 0;
 		}
 		auto n = decodeNode(i, lev);
-		data[lev].emplace_back(n);
-
+		numPtrsBeforeNode[lev][i] = numPtrs;
+		data[lev].push_back(n);
 
 		if (lev < _levels - 1) {
-			i += n.getNChildren();
-			for (int c = 0; c < 8; c++) {
-				if (n.existsChild(c) && n.children[c] < levStarts[lev + 1]) {
-					levStarts[lev + 1] = n.children[c];
+			i += n.getNChildren(); // skip forward for each child pointer
+			for (int c = 0; c < 8; c++) { // update the start of the next level if an earlier child pointer can be found
+				if (n.existsChild(c)) {
+					levStarts[lev + 1] = sl::min(levStarts[lev + 1], n.children[c]);
 				}
 			}
+			numPtrs += n.getNChildren();
 		}
 	}
 
-	// After all nodes have been decoded, subtract level sizes from pointers,
-	// to make them relative to the start of the level again
+	// After all nodes have been decoded, recreate the true pointers
+	// By removing the number of numbers before each node from each pointer to that node
+	// And subtracting the acum size to make them relative to the start of the level again
 	printf("Updating pointers...\n");
 	unsigned int acumLevSize = 0;
-	for (int lev = 0; lev < _levels; ++lev) {
+	for (int lev = 0; lev < _levels - 1; ++lev) {
 		acumLevSize += data[lev].size();
+		for (GeomOctree::id_t nodeIndex = 0; nodeIndex < data[lev].size(); ++nodeIndex) {
+			acumLevSize += data[lev][nodeIndex].getNChildren();
+		}
+
 		for (GeomOctree::id_t nodeIndex = 0; nodeIndex < data[lev].size(); ++nodeIndex) {
 			auto *n = &data[lev][nodeIndex];
 			for (int c = 0; c < 8; ++c) {
-				if (n->existsChildPointer(c)) {
-					n->children[c] -= acumLevSize;
+				if (n->existsChild(c)) {
+					n->children[c] -= acumLevSize + numPtrsBeforeNode[lev + 1][n->children[c]];
+				} else {
+					n->children[c] = GeomOctree::nullNode;
 				}
 			}
 		}
-		// todo: or acumLevSize += ... here?
 	}
 
 

@@ -120,7 +120,7 @@ void GeomOctree::buildMultiMap(
             continue;
         }
 
-        hashes[lev].reserve(_data[lev].size());
+        hashes[lev].resize(_data[lev].size());
         matchMaps[lev].clear();
 
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
