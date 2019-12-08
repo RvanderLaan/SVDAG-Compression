@@ -106,6 +106,7 @@ private: ///////////// Private attributes
 public:
 	GeomOctree(Scene * scene);
 	GeomOctree(const GeomOctree &other);
+	GeomOctree(const NodeData &data, sl::aabox3f _bbox, double _rootSide, unsigned int _levels, GeomOctree::Stats _stats);
 	
 	// Gettters & Setters
 	inline void setScene(Scene * scene) { _scene = scene; }
@@ -134,6 +135,18 @@ public:
     void hiddenGeometryFloodfill();
     std::vector<std::vector<unsigned int>> sortByRefCount();
     std::vector<std::vector<unsigned int>> sortByEffectiveRefCount();
+
+	inline void getNumVoxels(unsigned int lev, const Node &n, unsigned int &numVoxels, const unsigned int &abort) {
+
+		for (int i = 0; i < 8; i++) {
+			if (n.existsChildPointer(i)) {
+				getNumVoxels(lev + 1, _data[lev + 1][n.children[i]], numVoxels, abort);
+				if (numVoxels >= abort) return;
+			} else if (n.existsChild(i)) {
+				numVoxels++;
+			}
+		}
+	}
 
 	// External tools
 	bool checkIntegrity();

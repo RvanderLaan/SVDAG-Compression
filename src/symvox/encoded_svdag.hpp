@@ -40,6 +40,8 @@ public:
 	virtual bool load(const std::string filename);
 	virtual bool save(const std::string filename) const;
 	virtual void encode(const GeomOctree & octree);
+	virtual GeomOctree decode(Scene &scene);
+	virtual GeomOctree::Node decodeNode(GeomOctree::id_t index, int lev);
 	virtual int getNodeIndex(sl::point3f p, int level) const;
 	virtual void * getDataPtr() const { return (void *)_data.data(); }
 	virtual size_t getDataSize() const { return _data.size() * sizeof(sl::uint32_t); }

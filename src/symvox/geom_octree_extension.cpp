@@ -120,7 +120,7 @@ void GeomOctree::buildMultiMap(
             continue;
         }
 
-        hashes[lev].reserve(_data[lev].size());
+        hashes[lev].resize(_data[lev].size());
         matchMaps[lev].clear();
 
         for (id_t nodeIndex = 0; nodeIndex < _data[lev].size(); ++nodeIndex) {
@@ -300,13 +300,19 @@ void GeomOctree::diffSubtrees(
         unsigned int &accumulator,
         unsigned int &numLeaves
 ) {
+    const int maxDiffPerLeaf = 4;
+
     // If nA is a leaf node, simply compare their child masks, since it doesn't matter what happens further down in B
     if (levA == _levels - 1) {
+        int leafDiff = 0;
         numLeaves++;
         for (int i = 0; i < 8; ++i) {
-            if (nA.existsChild(i) != nB.existsChild(i))
+            if (nA.existsChild(i) != nB.existsChild(i)) {
                 accumulator++;
+                leafDiff++;
+            }
         }
+        if (leafDiff > maxDiffPerLeaf) accumulator += abortThreshold + 1;
         return;
     }
 
@@ -318,15 +324,23 @@ void GeomOctree::diffSubtrees(
 
         // If the child bits don't match, compare...
         if (nA.existsChild(i) != nB.existsChild(i)) {
+            //int diff = nA.existsChild(i) ? getNumVoxels(levA, nA) : getNumVoxels(levB, nB);
             if (levA == _levels - 2) {
+                unsigned int leafDiff = 0;
                 numLeaves++;
                 // If we're at the level above the leaves, simply check how different they are
                 for (int j = 0; j < 8; ++j) {
                     if (nA.existsChild(i)
-                        ? _data[levA + 1][nA.children[i]].existsChild(j)
-                        : _data[levB + 1][nB.children[i]].existsChild(j)) {
+                      ? _data[levA + 1][nA.children[i]].existsChild(j)
+                      : _data[levB + 1][nB.children[i]].existsChild(j)) {
                         accumulator++;
+                        leafDiff++;
                     }
+                }
+
+                if (leafDiff > maxDiffPerLeaf) {
+                    accumulator += abortThreshold + 1;
+                    return;
                 }
                 continue;
             } else {
@@ -334,6 +348,7 @@ void GeomOctree::diffSubtrees(
                 // Todo: Could still be a match in some weird edge cases, e.g. if a parent contains 1 child which contains 1 voxel
                 // Proper solution: We need to find the amount of voxels in the one subtree that does exist
                 accumulator += abortThreshold;
+                // Todo: accumulator += getNumVoxels(nA/nB);
                 return;
             }
         } else if (!nA.existsChild(i) && !nB.existsChild(i)) {
@@ -870,6 +885,9 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
     std::map<id_t, bool> uniqueNodesChecker;
     std::map<id_t, bool> prevClusterReps, curClusterReps;
 
+    // A map that contains for every node for the level below the current level, which nodes it is similar to and the difference between them
+    std::multimap<id_t, std::pair<id_t, unsigned int>> prevSimilarNodes, curSimilarNodes;
+
     sl::time_point ts = sl::real_time_clock::now();
 
     // For every level, starting at two levels above the leaves...
@@ -981,11 +999,33 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
                     unsigned int diff = 0, numLeaves = 0;
                     this->diffSubtrees(lev, lev, n, nB, maxAllowedDiff + 1, diff, numLeaves);
 
+                    // Compare differences between children
+                    // for (int c = 0; c < 8; c++) {
+                    //     if (n.existsChild(c) && nB.existsChild(c)) {
+                    //         const auto &simNodesA = prevSimilarNodes.equal_range(idA);
+                    //         for (auto simIt = candidates.first; simIt != candidates.second; ++simIt) {
+                    //             if (simIt->first == idB) {
+                    //                 diff += it->second;
+                    //                 break;
+                    //             }
+                    //         }
+                    //         // else if not found
+                    //         auto it = std::find(simNodesA.begin(), simNodesA.end(), nB.children[c]);
+                    //         if (it != simNodesA.end()) { // if they are similar, add up the difference
+                    //             diff += it->second;
+                    //         } else { // if not similar, abort
+                    //             diff += maxAllowedDiff + 1;
+                    //             break;
+                    //         }
+                    //     }
+                    // }
+
                     // For subtrees with few leaf nodes, diff should be relatively lower
                     // --> If difference greater than avg amount of voxels in leaves, abort
                     float maxAllowedSubtreeDiff = 4.0 * numLeaves; // * allowedLossyDiffFactor;
 #pragma omp critical
                     if (diff <= maxAllowedDiff && diff < maxAllowedSubtreeDiff) {
+                        // curSimilarNodes.insert()
 
                         numLeavesTotal += numLeaves;
                         numMatchesTotal++;

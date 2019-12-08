@@ -702,7 +702,7 @@ void main() {
 		else if (viewerRenderMode == 3) { // PRETTY
 
 			// ====Base color, based on depth====
-			t = 1.0 - result.x / length(sceneBBoxMax-sceneBBoxMin);
+			t = 1.0;// - result.x / length(sceneBBoxMax-sceneBBoxMin);
 
 
 			// ====Voxel normal direction====
@@ -729,6 +729,7 @@ void main() {
 				((3 * nodeIndex) % 200) / 200.f
 			));
 
+			const float normalRayLength = 64 * cellSize;
 			vec3 smoothNorm = hitNorm;
 			float numNormSamplesHit = 1;
 			float normSampleRot = 3.14159f * 2.f / float(normSamples);
@@ -736,15 +737,15 @@ void main() {
 			// Sample multiple times per pixel, in the cone that surrounds the pixel projected into the scene
 			for (int i = 0; i < normSamples; i++) {
 				vec3 normSample;
-				float rad = 0.5;//mod(result.x + i / float(normSamples) + nodeIndex * 0.001, 2);
+				float rad = 0.1 + mod(i / float(normSamples) * nodeIndex * 0.001, 0.9);
 				// Sample in a circle around the main ray, at a random radius
 				float angle = i * normSampleRot + initAngleOffset;
 				vec2 rayPixOffset = rad * vec2(cos(angle), sin(angle)) / screenRes;
 				r = computeCameraRay(screenCoords + rayPixOffset);
-				vec2 t_min_max = vec2(result.x - cellSize * 8, result.x + cellSize * 8); // vec2(0, 1e30);
+				vec2 t_min_max = vec2(result.x - normalRayLength * 0.5f, result.x + normalRayLength * 0.5f); // vec2(0, 1e30);
 				stack_size = 0;
 				vec4 normSampleRes = trace_ray(r, t_min_max, projectionFactor, normSample);
-				if (normSampleRes.x >= 0) {
+				if (normSampleRes.x >= 0 && distance(normSampleRes.x, result.x) <= normalRayLength) {
 					numNormSamplesHit++;
 					smoothNorm += normSample;
 				}
@@ -757,7 +758,7 @@ void main() {
 			t *= 0.5 + 0.5 * max(dot(hitNorm, lightDir), 0);
 
 			// Light fall-off
-			t -= 0.5 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
+			t -= 0.2 * distance(hitPos, lightPos) / length(sceneBBoxMax-sceneBBoxMin);
 			// Traversal depth (looks nice without beam opt)
 			// t *=  1. - (result.z / float(maxIters));
 		}
@@ -810,8 +811,8 @@ void main() {
 			stack_size = 0; // not sure why it needs to be reset, but else it causes artifacts
 			vec4 shd_result = trace_ray(r, t_min_max * 0.5, sProjFactor, hitNorm);
 
-			// Add shadows
-			color *= (shd_result.x > 0) ? 0.5 : 1;
+			// Add shadows if intersection or too many iterations
+			color *= (shd_result.x > 0 || result.x == -3) ? 0.5 : 1;
 //				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
 		}
 	}
@@ -825,7 +826,7 @@ void main() {
 		// else if (
 			|| result.x == -4.) // no intersection, out of BBox => background
 		{ 
-			color = 0.5 * (screenCoords.y + 1) * vec3(0.3,0.2,0.9);
+			color = vec3(1);// 0.5 * (screenCoords.y + 1) * vec3(0.3,0.2,0.9);
 		}
 		
 		else if (result.x == -3.) // too many iterations

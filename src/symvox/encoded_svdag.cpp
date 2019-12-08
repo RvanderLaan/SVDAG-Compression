@@ -66,6 +66,10 @@ bool EncodedSVDAG::load(const std::string filename)
 
 	printf("OK!\n");
 
+	//std::cout << "BBOX: " << _sceneBBox[0] << " | " << _sceneBBox[1] << std::endl;
+	//std::cout << "META: " << _rootSide << " , " << _levels << ", " << _nNodes << ", " << _firstLeafPtr << ", " << count << std::endl;
+	//std::cout << "ROOT: " << _data[0] << " , " << _data[1] << ", " << _data[2] << ", " << _data[3] << ", " << _data[4] << ", " << _data[5] << ", " << _data[6] << ", " << _data[7] << ", " << _data[8] << std::endl;
+
 	return true;
 }
 
@@ -193,6 +197,90 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 
 	printf("OK! [%s]\n", sl::human_readable_duration(_encodingTime).c_str());
 }
+
+GeomOctree::Node EncodedSVDAG::decodeNode(GeomOctree::id_t index, int lev) {
+	GeomOctree::Node node;
+	node.childrenBitmask = (sl::uint8_t) _data[index];
+
+	if (lev != _levels - 1) {
+		int childCount = 0;
+		for (int i = 0; i < 8; i++) {
+			if (node.existsChild(7 - i)) {
+				node.children[7 - i] = _data[index + childCount + 1];
+				childCount++;
+			}
+		}
+	}
+	return node;
+}
+
+GeomOctree EncodedSVDAG::decode(Scene &scene) {
+	GeomOctree::NodeData data(_levels);
+
+	// loop over all encoded nodes & keep track of which level we're at manually
+	int lev = 0;
+
+	std::vector<unsigned int> levStarts(_levels, -1); // keep track of starting positions per level, starting at MAX_UINT
+	levStarts[0] = 0;
+
+
+	unsigned int numPtrs = 0;
+	std::vector<std::map<unsigned int, unsigned int>> numPtrsBeforeNode(_levels);
+
+	printf("Decoding nodes...\n");
+	for (unsigned int i = 0; i < _data.size(); i++) {
+		if (lev < (int) _levels - 1 && i == levStarts[lev + 1]) { // if the start of the next level has been reached, increment lev
+			lev++;
+			numPtrs = 0;
+		}
+		auto n = decodeNode(i, lev);
+		numPtrsBeforeNode[lev][i] = numPtrs;
+		data[lev].push_back(n);
+
+		if (lev < _levels - 1) {
+			i += n.getNChildren(); // skip forward for each child pointer
+			for (int c = 0; c < 8; c++) { // update the start of the next level if an earlier child pointer can be found
+				if (n.existsChild(c)) {
+					levStarts[lev + 1] = sl::min(levStarts[lev + 1], n.children[c]);
+				}
+			}
+			numPtrs += n.getNChildren();
+		}
+	}
+
+	// After all nodes have been decoded, recreate the true pointers
+	// By removing the number of numbers before each node from each pointer to that node
+	// And subtracting the acum size to make them relative to the start of the level again
+	printf("Updating pointers...\n");
+	unsigned int acumLevSize = 0;
+	for (int lev = 0; lev < _levels - 1; ++lev) {
+		acumLevSize += data[lev].size();
+		for (GeomOctree::id_t nodeIndex = 0; nodeIndex < data[lev].size(); ++nodeIndex) {
+			acumLevSize += data[lev][nodeIndex].getNChildren();
+		}
+
+		for (GeomOctree::id_t nodeIndex = 0; nodeIndex < data[lev].size(); ++nodeIndex) {
+			auto *n = &data[lev][nodeIndex];
+			for (int c = 0; c < 8; ++c) {
+				if (n->existsChild(c)) {
+					n->children[c] -= acumLevSize + numPtrsBeforeNode[lev + 1][n->children[c]];
+				} else {
+					n->children[c] = GeomOctree::nullNode;
+				}
+			}
+		}
+	}
+	
+	GeomOctree::Stats stats;
+	stats.nTotalVoxels = _nVoxels;
+	stats.nNodesDAG = _nNodes;
+	stats.nNodesLastLevDAG = _nLeaves;
+
+	GeomOctree octree(data, _sceneBBox, _rootSide, _levels, stats);
+	return octree;
+}
+
+
 
 int EncodedSVDAG::getNodeIndex(sl::point3f p, int level) const
 {
