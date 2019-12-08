@@ -54,6 +54,9 @@ GeomOctree::GeomOctree(const NodeData &data, sl::aabox3f bbox, double rootSide, 
 	_levels = levels;
 	_stats = stats;
 	_levels = levels;
+	_nNodes = stats.nNodesDAG;
+	_nLeaves = stats.nNodesLastLevDAG;
+	_nVoxels = stats.nTotalVoxels;
 }
 
 void GeomOctree::buildSVOFromPoints(std::string fileName, unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters) {

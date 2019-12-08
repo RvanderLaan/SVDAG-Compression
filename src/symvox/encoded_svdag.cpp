@@ -66,6 +66,10 @@ bool EncodedSVDAG::load(const std::string filename)
 
 	printf("OK!\n");
 
+	//std::cout << "BBOX: " << _sceneBBox[0] << " | " << _sceneBBox[1] << std::endl;
+	//std::cout << "META: " << _rootSide << " , " << _levels << ", " << _nNodes << ", " << _firstLeafPtr << ", " << count << std::endl;
+	//std::cout << "ROOT: " << _data[0] << " , " << _data[1] << ", " << _data[2] << ", " << _data[3] << ", " << _data[4] << ", " << _data[5] << ", " << _data[6] << ", " << _data[7] << ", " << _data[8] << std::endl;
+
 	return true;
 }
 
@@ -201,8 +205,8 @@ GeomOctree::Node EncodedSVDAG::decodeNode(GeomOctree::id_t index, int lev) {
 	if (lev != _levels - 1) {
 		int childCount = 0;
 		for (int i = 0; i < 8; i++) {
-			if (node.existsChild(i)) {
-				node.children[i] = _data[index + childCount + 1];
+			if (node.existsChild(7 - i)) {
+				node.children[7 - i] = _data[index + childCount + 1];
 				childCount++;
 			}
 		}
@@ -266,16 +270,12 @@ GeomOctree EncodedSVDAG::decode(Scene &scene) {
 			}
 		}
 	}
-
-
-	GeomOctree::State state;
 	
 	GeomOctree::Stats stats;
 	stats.nTotalVoxels = _nVoxels;
 	stats.nNodesDAG = _nNodes;
 	stats.nNodesLastLevDAG = _nLeaves;
 
-	// GeomOctree octrea(data, state, stats, _sceneBBox, _rootSide, _levels, scene, n)
 	GeomOctree octree(data, _sceneBBox, _rootSide, _levels, stats);
 	return octree;
 }

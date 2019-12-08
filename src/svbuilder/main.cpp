@@ -38,7 +38,7 @@ void printUsage() {
 		"Usage:\n"
 		"      svbuilder input_model.obj numLevels numBuildSteps [--lossy or -l] [--cross-level-merging or -c] [<output.[svo | svdag | ussvdag | ssvdag]>\n"
 		"Where:\n"
-		"      input_model.obj: a 3D model in ASCII OBJ format\n"
+		"      input_model.obj: a 3D model in ASCII OBJ format OR a pre-built SVDAG file\n"
 		"      numLevels: levels of the octree to build (i.e. 10->1K^3, 13->8K^3...)\n"
 		"      numBuildSteps:\n"
 		"          if   0, raw build of the full octree, only 1 thread\n"
