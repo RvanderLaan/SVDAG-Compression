@@ -81,7 +81,7 @@ endif()
 ############## C++ 11 compatibility on GCC and misc. stuff
 
 # Update to C++ 17
-# set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 
 if(CMAKE_COMPILER_IS_GNUCXX)
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
