@@ -783,7 +783,10 @@ void main() {
 			else if (hitLev == LEVELS - 3) levSize = textureSize(innerNodes) * 4 - levelOffsets[hitLev]; // lev above leaves
 			else 					  levSize = levelOffsets[hitLev + 1] - levelOffsets[hitLev];
 			float indexInLevel = nodeIndex / levSize;
-			color *= TurboColormap(1.0f - indexInLevel - 0.05f);
+//			color *= TurboColormap(1.0f - indexInLevel - 0.05f);
+			// color *= TurboColormap(1.f - pow(1.f - indexInLevel, 2) - 0.05f);
+			
+			color *= mix(vec3(1), vec3(0, 0.2, 0.8), 1.f - pow(1.f - indexInLevel, 2));
 		}
 #endif
 		// Assign random colors based on the index of a node
@@ -812,7 +815,7 @@ void main() {
 			vec4 shd_result = trace_ray(r, t_min_max * 0.5, sProjFactor, hitNorm);
 
 			// Add shadows if intersection or too many iterations
-			color *= (shd_result.x > 0 || result.x == -3) ? 0.5 : 1;
+			color *= (shd_result.x > 0 || result.x == -3) ? 0.8 : 1;
 //				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
 		}
 	}
