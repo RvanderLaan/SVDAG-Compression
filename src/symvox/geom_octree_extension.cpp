@@ -1057,7 +1057,7 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
         // - Then, find which nodes are potential matches the most frequently
         printf("\n\tClustering... "); fflush(stdout);
         auto tClusterStart = _clock.now();
-        const std::vector<std::vector<unsigned int>> clusters = cluster::clusterSubgraphs(edges, lossyInflation, lev);
+        std::vector<std::vector<unsigned int>> clusters = cluster::clusterSubgraphs(edges, lossyInflation, lev);
         _stats.lClustering += _clock.now() - tClusterStart;
         printf(" Done! \n"); fflush(stdout);
 
@@ -1074,20 +1074,39 @@ void GeomOctree::toLossyDag(float lossyInflation, float allowedLossyDiffFactor, 
         _stats.nEdges += edges.size();
         size_t nNodesInClusters = 0;
         size_t nTotalVoxelDiff = 0;
-        for (auto c : clusters) {
-            _stats.nClusteredNodes += c.size();
+
+        size_t nClusters = clusters.size();
+        size_t nClusterOutliers = 0;
+
+        for (unsigned int clustersIt = 0; clustersIt < nClusters; clustersIt++) {
+            _stats.nClusteredNodes += clusters[clustersIt].size();
+            if (clusters[clustersIt].size() == 1) continue;
             
             // Compute total difference between all nodes in this cluster to its representative
-            const auto &rep = _data[lev][c[0]];
-            for (id_t nbID : c) {
+            const auto &rep = _data[lev][clusters[clustersIt][0]];
+            for (unsigned int cIt = 1; cIt < clusters[clustersIt].size();) {
+                unsigned int nbID = clusters[clustersIt][cIt];
+
                 unsigned int diff = 0, numLeaves = 0;
                 const auto &nB = _data[lev][nbID];
                 this->diffSubtrees(lev, lev, rep, nB, maxAllowedDiff + 1, diff, numLeaves);
                 // Voxel diff increases with number of references
                 int numRefs = refCounts[lev][nbID];
-                _stats.totalLossyVoxelDifference += std::min(maxAllowedDiff, diff) * numRefs;
+
+                // Ensure all nodes in cluster are "similar" to representative, as in difference below applied threshold
+                if (diff > maxAllowedDiff) {
+                    clusters[clustersIt].erase(clusters[clustersIt].begin() + cIt);
+                    std::vector<unsigned int> outlierCluster(1, nbID);
+                    clusters.emplace_back(outlierCluster);
+                    nClusterOutliers++;
+                } else {
+                    _stats.totalLossyVoxelDifference += std::min(maxAllowedDiff, diff) * numRefs;
+                    cIt++;
+                }
             }
         }
+
+        printf("*** Clusters / cluster outliers: %zu / %zu (%.2f%%) \n", nClusters, nClusterOutliers, 100 * nClusterOutliers / (float) nClusters);
 
         // Replacing nodes from clusters
         for (unsigned int c = 0; c < clusters.size(); ++c) {

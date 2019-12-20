@@ -733,7 +733,7 @@ void main() {
 			vec3 smoothNorm = hitNorm;
 			float numNormSamplesHit = 1;
 			float normSampleRot = 3.14159f * 2.f / float(normSamples);
-			float initAngleOffset = mod(result.x * screenCoords.x * nodeIndex * 0.01 + nodeIndex * 0.001 * screenCoords.y, 1);
+			float initAngleOffset = mod(result.x * screenCoords.x * nodeIndex * 0.01f + nodeIndex * 0.001f * screenCoords.y, 1);
 			// Sample multiple times per pixel, in the cone that surrounds the pixel projected into the scene
 			for (int i = 0; i < normSamples; i++) {
 				vec3 normSample;

@@ -21,6 +21,7 @@ IF( CMAKE_SIZEOF_VOID_P EQUAL 8 ) # 64 bits
 		$ENV{PROGRAMFILES}/sl/lib)
 		
 	SET( SL_UNIX_LIB_DIRS
+		${SL_ROOT_DIR}/lib
 		/usr/lib64
 		/usr/local/lib64
 		/sw/lib

@@ -207,7 +207,7 @@ int main(int argc, char ** argv) {
 	// Prepare for saving file to disk
 	std::string path = sl::pathname_directory(inputFile);
 	std::string baseName = sl::pathname_base(sl::pathname_without_extension(inputFile));
-	std::string basePath = path + "/" + baseName + "_" + std::to_string(nLevels);
+	std::string basePath = path + "/" + baseName + "-enforce-sim_" + std::to_string(nLevels);
 	std::string sep = sl::pathname_directory_separators();
 
 	int precisionVal = 1;

@@ -194,7 +194,7 @@ IF(BUILD_SVVIEWER)
 	)
 
 	if(UNIX)
-		set(ADDITIONAL_LIBRARIES X11 Xxf86vm m Xinerama Xcursor rt pthread)
+		set(ADDITIONAL_LIBRARIES X11 Xxf86vm m rt pthread) # Xinerama Xcursor
 	else()
 		set(ADDITIONAL_LIBRARIES "")
 	endif()
