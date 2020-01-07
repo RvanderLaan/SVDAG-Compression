@@ -1,0 +1,9 @@
+{
+  "name": "floodfill-test",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "scripts": {
+    "start": "tsc -w"
+  },
+  "license": "MIT"
+}

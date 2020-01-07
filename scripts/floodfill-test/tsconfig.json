@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "sourceMap": true,
+    "target": "ES6"
+  },
+  "include": ["main.ts"]
+}
