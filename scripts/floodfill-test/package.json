@@ -5,5 +5,8 @@
   "scripts": {
     "start": "tsc -w"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "^3.7.4"
+  }
 }
