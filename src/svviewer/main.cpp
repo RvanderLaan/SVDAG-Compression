@@ -47,6 +47,9 @@ std::string filename = "";
 static char filenameInput[128] = "";
 static char filenameInput2[128] = "";
 
+static char recordingInput[128] = "";
+static char loadRecordingInput[128] = "";
+
 OctreeDDARenderer * renderer;
 EncodedOctree* encoded_octree;
 RendererMonitor::FrameStats frameStats;
@@ -245,6 +248,7 @@ void handleImgui() {
                 renderer->uploadData();
             }
         }
+
         bool doLoadFile2 = ImGui::InputText("##file-slot-2", filenameInput2, IM_ARRAYSIZE(filenameInput2),
                                             ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
@@ -277,7 +281,6 @@ void handleImgui() {
         //if (ImGui::SliderFloat("Fov", &fovInput, 0.0f, 6.28))
         //	renderer->setFovH(fovInput);
 
-
 		ImGui::Text("Camera controller");
 		ImGui::SameLine();
         if (ImGui::RadioButton("Orbit", isUsingOrbitController))
@@ -296,6 +299,28 @@ void handleImgui() {
 			renderer->getCamera()->getCurrentConfig().target += delta;
 			renderer->getCamera()->updateMatrices();
         }
+
+
+		bool doRecord = ImGui::InputText("##record", recordingInput, IM_ARRAYSIZE(recordingInput),
+			ImGuiInputTextFlags_EnterReturnsTrue);
+		ImGui::SameLine();
+		doRecord = doRecord || ImGui::Button(cam->isRecordingWalkthrough() ? "Stop recording" : "Record walkthrough");
+		if (doRecord)
+			cam->isRecordingWalkthrough() ? cam->stopWalkthrough() : cam->recordWalkthrough(recordingInput);
+
+		bool doPlayback = ImGui::InputText("##playback", loadRecordingInput, IM_ARRAYSIZE(loadRecordingInput),
+			ImGuiInputTextFlags_EnterReturnsTrue);
+		ImGui::SameLine();
+		doRecord = doRecord || ImGui::Button("Load walkthrough");
+		if (doRecord) cam->loadWalkthrough(loadRecordingInput);
+
+		if (ImGui::Button(cam->isPlayingWalkthrough() ? "Stop playing" : "Play walkthrough")) {
+			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button(cam->isPlayingWalkthrough() ? "Stop playing" : "Play walkthrough (smooth)")) {
+			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough(16);
+		}
 
 		if (ImGui::DragFloat3("Light position", lightPosInput, 2)) {
 			renderer->setLightPos(sl::point3f(lightPosInput[0], lightPosInput[1], lightPosInput[2]));

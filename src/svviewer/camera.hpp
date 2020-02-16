@@ -103,6 +103,7 @@ public:
 	bool playWalkthrough(int interpol = 1, bool rewind = false);
 	void stopWalkthrough();
 	inline bool isPlayingWalkthrough() { return (_state == WT_PLAYING); }
+	inline bool isRecordingWalkthrough() { return (_state == WT_RECORDING); }
 	
 	void printControls();
 	void updateMatrices();
