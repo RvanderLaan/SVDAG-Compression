@@ -319,7 +319,11 @@ void handleImgui() {
 		}
 		ImGui::SameLine();
 		if (ImGui::Button(cam->isPlayingWalkthrough() ? "Stop playing" : "Play walkthrough (smooth)")) {
-			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough(16);
+			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough(15);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button(cam->isPlayingWalkthrough() ? "Stop playing" : "Play walkthrough (super smooth)")) {
+			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough(60);
 		}
 
 		if (ImGui::DragFloat3("Light position", lightPosInput, 2)) {
@@ -439,7 +443,7 @@ int main(int argc, char ** argv)
 	renderer->resetState();
 	renderer->toggleRenderingStats();
 
-	glfwSwapInterval(1); // Enable/disable vsync
+	glfwSwapInterval(2); // Enable/disable vsync
 	glClearColor(0.3f, 0.5, 0.7f, 1.0f);
 
 	/////////// imgui setup //////////
