@@ -117,14 +117,24 @@ struct traversal_status {
 	
 	float cell_size;
 	uint level;
+
+	vec3 attr_sum;
 };
 
 //////////////////////////// STACK STUFF ////////////////////
 
 #define MAX_STACK_DEPTH (INNER_LEVELS+1)
 
-ivec3 stack[MAX_STACK_DEPTH];
+ivec3 stack[MAX_STACK_DEPTH]; // stack of ivec3(nodeIndex, hdr, mask) for each traversal level 
 uint stack_size = 0;
+
+vec3 get_header_attrs(uint hdr) {
+	vec3 res = vec3(0);
+	res.x = ((hdr & 0XFF000000) >> 24) / 255.0;
+	res.y = ((hdr & 0X00FF0000) >> 16) / 255.0;
+	res.z = ((hdr & 0X0000FF00) >>  8) / 255.0;
+	return res;
+}
 
 void stack_push(in const int node, in const uint hdr, in const ivec3 mirror_mask, in const uint level) {
 	const int mask = mirror_mask.x | (mirror_mask.y << 1) | (mirror_mask.z << 2) | int(level << 3);
@@ -419,6 +429,9 @@ void up_in(in const Ray r, inout traversal_status ts) {
 	uint delta_level = ts.level;
 	stack_pop_in(ts.node_index, ts.hdr, ts.mirror_mask, ts.level);
 	delta_level -= ts.level;
+
+	// Subtract popped color from the color sum
+	ts.attr_sum -= get_header_attrs(ts.hdr); // mask is stored in stack y
 	
 	ts.idx >>= delta_level; // always delta_level >= 1
 	ts.cell_size *= (1 << delta_level);  
@@ -456,7 +469,10 @@ void down_in(in const Ray r, inout traversal_status ts) {
 	const ivec3 delta = dda_next_delta_index(ts);    
 	
 	if (in_bounds(local_idx + delta, 2)) { 
-		stack_push(ts.node_index, ts.hdr, ts.mirror_mask, ts.level); 
+		stack_push(ts.node_index, ts.hdr, ts.mirror_mask, ts.level);
+		
+		// Add to color sum
+		ts.attr_sum += get_header_attrs(ts.hdr);
 	}
 	  
 	// Go down to next level: Fetch child index (store in node_idx)
@@ -464,8 +480,11 @@ void down_in(in const Ray r, inout traversal_status ts) {
 	fetch_child_index_in(ts);
 	
 	go_down_one_level(r, ts);
+
+
 	
 	if (ts.level == INNER_LEVELS) {
+
 		// GO TO LEAVES
 		ts.current_node_size = LEAF_SIZE;
 		int voxel_count = LEAF_SIZE / 2;
@@ -514,6 +533,7 @@ void init(inout Ray r, inout traversal_status ts) {
 	ts.mirror_mask = ivec3(0,0,0);
 	ts.level = 0;
 	ts.cell_size = 0.5;
+	ts.attr_sum = vec3(0);
 	
 	// Step status
 	dda_init(r, ts);
@@ -547,6 +567,10 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 	init(r, ts);
 
 	ivec3 stepDir = ivec3(0);
+
+	// TODO: Each traversal iteration, re-use the attributes of the parent
+	// sum up the attributes, divide by the nr of iterations at the end?
+	// (later, the luma can have higher influence than chroma)
 	
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);
@@ -565,7 +589,12 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 			const bool hit = (ts.level >= max_level || resolution_ok(ts.t_current, ts.cell_size, projection_factor)); 
 			if (hit) {
 				norm = -vec3(stepDir);
+				
+				// Add to color sum
+				// ts.attr_sum += get_header_attrs(ts.hdr);
+				
 				ts_out = ts;
+
 				return vec4(ts.t_current * scale, ts.level, float(iteration_count), ts.node_index);  // intersection
 			} else {
 				down_in(r, ts);
@@ -680,7 +709,9 @@ void main() {
 	}
 #endif
 	const float epsilon = 1E-3f;
-	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) - epsilon : 0, 1e30); // subtract epsilon for getting proper normal
+	vec2 t_min_max = vec2(
+		useMinDepthTex ? clamp(getMinT(8) - 1E-4f, 0., 1e30f) : 0.,
+		1e30); // subtract epsilon for getting proper normal
 	vec3 hitNorm;
 	traversal_status ts;
 	vec4 result = trace_ray(r, t_min_max, projectionFactor, hitNorm, ts);
@@ -697,9 +728,11 @@ void main() {
 		float t = 0;
 		if(viewerRenderMode == 0) // ITERATIONS
 			t =  1. - (result.z / float(maxIters));
-		else if(viewerRenderMode == 1) // DEPTH
+		else if(viewerRenderMode == 1) { // DEPTH
 			t = result.x / length(sceneBBoxMax-sceneBBoxMin);
-		else if (viewerRenderMode == 2) // VOXEL LEVELS
+			// gamma correction
+			t = 1. - pow(t, 1. / 2.2);
+		} else if (viewerRenderMode == 2) // VOXEL LEVELS
 			t = log2(2. * rootHalfSide / result.y) / float(LEVELS);
 		else if (viewerRenderMode == 3) { // PRETTY
 
@@ -791,24 +824,32 @@ void main() {
 #endif
 		// Assign random colors based on the index of a node
 		else if (randomColors) {
-			vec3 randomColor;
+			// vec3 randomColor = get_header_attrs(ts.hdr);
+			// Todo: we need to sample neighboring nodes as well to avoid blocky colors... hmm
+			vec3 randomColor = ts.attr_sum / float(stack_size); //result.y; // sum of attrs or all nodes / number of levels
 
-			if (drawLevel == LEVELS - 1) { // for attribute DAG: attributes are at leaf level
-				// This node represents 8 voxels, each one has different attributes
-				// How do I find out which voxel of this node is intersected? Lets just pick the first one for now
-					
-				ts.child_linear_index = voxel_to_linear_idx(ts.mirror_mask, ts.local_idx, ts.current_node_size);
-				fetch_child_index_in(ts);
-				fetch_data(ts);
+			// old idea: store attr in pointers
+			// new: store in header padding
 
-				randomColor = vec3(ts.hdr / 255.);
-			} else {
-				randomColor = normalize(vec3(
-					(nodeIndex % 100) / 100.f,
-					((3 * nodeIndex) % 200) / 200.f,
-					((2 * nodeIndex) % 300) / 300.f
-				));
-			}
+//			randomColor = vec3(clamp(ts.hdr / 255.0, 0, 1));
+
+//			if (drawLevel == LEVELS - 1) { // for attribute DAG: attributes are at leaf level
+//				// This node represents 8 voxels, each one has different attributes
+//				// How do I find out which voxel of this node is intersected? Lets just pick the first one for now
+//					
+//				ts.child_linear_index = voxel_to_linear_idx(ts.mirror_mask, ts.local_idx, ts.current_node_size);
+//				fetch_child_index_in(ts);
+//				fetch_data(ts);
+//
+//				randomColor = vec3(ts.hdr / 255.);
+//			} else {
+//				randomColor = normalize(vec3(
+//					(nodeIndex % 100) / 100.f,
+//					((3 * nodeIndex) % 200) / 200.f,
+//					((2 * nodeIndex) % 300) / 300.f
+//				));
+//			}
+
 			color *= randomColor;
 		} 
 

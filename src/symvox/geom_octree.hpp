@@ -128,7 +128,8 @@ public:
     unsigned int mergeAcrossAllLevels();
     void symMergeAcrossAllLevels();
     void toHiddenGeometryDAG();
-		void toAttributeSVO();
+	void toAttributeSVO();
+	void propagateYUV();
 
     // External helpers
     void initChildLevels();

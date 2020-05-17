@@ -2155,3 +2155,32 @@ void GeomOctree::toAttributeSVO() {
     _nNodes += _data[_levels - 1].size();
     _nLeaves = _data[_levels - 1].size();
 }
+
+// Propagates the YUV attributes of the leaf nodes up in the SVO
+void GeomOctree::propagateYUV() {
+	// Expects attributes to be in leaf children (yuv float array)
+	// Will put the average of children in each parent
+
+	printf("Propagating YUV attributes to each parent node as average of children...\n");
+
+	// For every level, starting above the leaf nodes...
+	for (int lev = _levels - 2; lev >= 0; lev--) {
+		// For every node in this level...
+		for (auto &n : _data[lev]) {
+			for (int i = 0; i < 8; i++) {
+				if (n.existsChild(i)) {
+					// Add up the YUV components in the parent
+					for (unsigned int chan = 0; chan < 3; chan++) {
+						n.yuv[chan] += _data[lev + 1][n.children[i]].yuv[chan];
+					}
+				}
+			}
+
+			// Divide by number of children to get average
+			float numChildren = (float)n.getNChildren();
+			for (unsigned int chan = 0; chan < 3; chan++) {
+				n.yuv[chan] /= numChildren;
+			}
+		}
+	}
+}

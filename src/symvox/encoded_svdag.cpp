@@ -98,6 +98,23 @@ bool EncodedSVDAG::save(const std::string filename) const
 	return true;
 }
 
+//float clamp(float n, float lower, float upper) {
+//	return std::max(lower, std::min(n, upper));
+//}
+
+// https://stackoverflow.com/questions/1737726/how-to-perform-rgb-yuv-conversion-in-c-c
+#define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
+
+// RGB -> YCbCr
+#define CRGB2Y(R, G, B) CLIP((19595 * R + 38470 * G + 7471 * B ) >> 16)
+#define CRGB2Cb(R, G, B) CLIP((36962 * (B - CLIP((19595 * R + 38470 * G + 7471 * B ) >> 16) ) >> 16) + 128)
+#define CRGB2Cr(R, G, B) CLIP((46727 * (R - CLIP((19595 * R + 38470 * G + 7471 * B ) >> 16) ) >> 16) + 128)
+
+// YCbCr -> RGB
+#define CYCbCr2R(Y, Cb, Cr) CLIP( Y + ( 91881 * Cr >> 16 ) - 179 )
+#define CYCbCr2G(Y, Cb, Cr) CLIP( Y - (( 22544 * Cb + 46793 * Cr ) >> 16) + 135)
+#define CYCbCr2B(Y, Cb, Cr) CLIP( Y + (116129 * Cb >> 16 ) - 226 )
+
 void EncodedSVDAG::encode(const GeomOctree & octree) {
 
 	printf("* Encoding to SVDAG... ");
@@ -148,7 +165,24 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 		levSizeAcum += levSize;
 		for (unsigned int i = 0; i < levSize; ++i) {
 			const GeomOctree::Node &n = octData[lev][i];
-			_data.push_back(sl::uint32_t(n.childrenBitmask));
+
+			// Back to RGB from YUV - would be better to do this in shader, more flexibility later for attr compression
+			int y = n.yuv[0], cr = n.yuv[1], cb = n.yuv[2];
+			float r, g, b;
+			r = CYCbCr2R(y, cr, cb);
+			g = CYCbCr2G(y, cr, cb);
+			b = CYCbCr2B(y, cr, cb);
+
+			// A node consists of a header node: The 8-bit bitmask (and experimenting with other 24 bits as attrs) 
+			sl::uint32_t headerNodeData =
+				sl::uint8_t(r) << 24 |
+				sl::uint8_t(g) << 16 |
+				sl::uint8_t(b) <<  8 |
+				n.childrenBitmask;
+			_data.push_back(headerNodeData);
+
+			// Header node is followed by up to 8 pointers
+
 //			printf("[%2d](%3d)[%i]", lev, dagEncoded.size() - 1, std::bitset<8>(bn.childrenBitmask).count());
 			if (_data.size() < _firstLeafPtr) {
 				counter = 0;

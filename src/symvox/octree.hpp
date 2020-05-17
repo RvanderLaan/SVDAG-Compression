@@ -56,6 +56,10 @@ public:  //////// Definitions
 public:  //////// Octree Node
 	struct Node {
 
+		float yuv[3];
+		// how often this node is referenced
+		unsigned int numRefs;
+
 		// Node's attributes
 		id_t children[8];
 		sl::uint8_t childrenBitmask;
@@ -70,6 +74,8 @@ public:  //////// Octree Node
             // By default, a child is located in the level below that of its parent
             childLevels[0] = childLevels[1] = childLevels[2] = childLevels[3] =
                 childLevels[4] = childLevels[5] = childLevels[6] = childLevels[7] = -1;
+			numRefs = 1;
+			yuv[0] = 0, yuv[1] = 0, yuv[2] = 0;
 		};
 
 		// Methods
@@ -118,5 +124,4 @@ public:
 		sl::vector3f k = float(1<<_levels) * ((point - _bbox[0]) / float(_rootSide));
 		return VoxelCoord(sl::uint32_t(k[0]), sl::uint32_t(k[1]), sl::uint32_t(k[2]));
 	}
-
 };

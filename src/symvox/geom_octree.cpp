@@ -166,6 +166,19 @@ unsigned int BinaryToGray(unsigned int num) {
     return num ^ (num >> 1);
 }
 
+// https://stackoverflow.com/questions/1737726/how-to-perform-rgb-yuv-conversion-in-c-c
+#define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
+
+// RGB -> YCbCr
+#define CRGB2Y(R, G, B) CLIP((19595 * R + 38470 * G + 7471 * B ) >> 16)
+#define CRGB2Cb(R, G, B) CLIP((36962 * (B - CLIP((19595 * R + 38470 * G + 7471 * B ) >> 16) ) >> 16) + 128)
+#define CRGB2Cr(R, G, B) CLIP((46727 * (R - CLIP((19595 * R + 38470 * G + 7471 * B ) >> 16) ) >> 16) + 128)
+
+// YCbCr -> RGB
+#define CYCbCr2R(Y, Cb, Cr) CLIP( Y + ( 91881 * Cr >> 16 ) - 179 )
+#define CYCbCr2G(Y, Cb, Cr) CLIP( Y - (( 22544 * Cb + 46793 * Cr ) >> 16) + 135)
+#define CYCbCr2B(Y, Cb, Cr) CLIP( Y + (116129 * Cb >> 16 ) - 226 )
+
 void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCall, std::vector< sl::point3d > * leavesCenters, bool putMaterialIdInLeaves) {
 
     if (!internalCall) printf("* Building SVO... ");
@@ -216,6 +229,8 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 
         // Push the root node to a queue
         queue.push(QueueItem(0, 0, bbox.center()));
+
+		sl::vector3f yuvContainer;
 
         // Traverse through all nodes in the tree that intersect with the triangle, starting at the root
         while (!queue.empty()) {
@@ -283,7 +298,20 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
                                 color = materials[triMatId].diffuseColor;
                             }
 
+							// New approach: Set YUV in a separate field, can be encoded in node header (replaces padding)
+							// TODO: This sets it for the entire leaf node, not its 8 individual voxels
+							// meh, good enough for now. Maybe encode as 64-bit leaf nodes?
+							// might work with 32 bit when only storing chroma difference from parent
+							// (4 bits per voxel available, should be fine in most cases)
+							//RGBToYUV(color, yuvContainer);
+							int r = int(color[0] * 255.),
+								g = int(color[1] * 255.),
+								b = int(color[2] * 255.);
+							node.yuv[0] = float(CRGB2Y(r, g, b)); // yuvContainer[0];
+							node.yuv[1] = float(CRGB2Cb(r, g, b));; // yuvContainer[1];
+							node.yuv[2] = float(CRGB2Cr(r, g, b));; // yuvContainer[2];
 
+#if 0 // OLD APPROACH: Put grayscale color in the node.children (pointers)
                             // Average of RGB: Gray scale
                             float f = (color[0] + color[1] + color[2]) / 3.;
                             // Todo: try both for binary and for gray code
@@ -296,6 +324,7 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 
                             // For now, just put it in children
                             node.children[i] = (id_t) attr;
+#endif
                         }
 											
 #if 0 // outputs a debug obj of voxels as points with their colours
@@ -393,6 +422,11 @@ void GeomOctree::buildDAG(unsigned int levels, unsigned int stepLevel, sl::aabox
 				lbbox.merge(leavesCenters[i]);
 				lbbox.merge(leavesCenters[i] + corners[j]);
 				leafOctree->buildSVO(levels - stepLevels, lbbox, true, nullptr, attributes);
+
+				if (attributes) {
+					leafOctree->propagateYUV();
+				}
+
 //				leafOctree->hiddenGeometryFloodfill(); // todo: fix this
 				size_t nNodesLeafSVO = leafOctree->getNNodes();
 				size_t nNodesLeafLastLevSVO = leafOctree->_data[leafOctree->_data.size() - 1].size();
@@ -548,6 +582,22 @@ void GeomOctree::toDAG(bool iternalCall) {
 
 			if (k != uniqueNodesChecker.end()) { // found
                 correspondences[i] = (*k).second; // store duplicate node
+				auto target = &(uniqueNodes[k->second]);
+
+
+				// experiment: store average color value
+				// New total amount that this node is referenced
+				target->numRefs += n.numRefs;
+
+				// weight; contribution of this node to avg color, depends on nr. of dupes
+				// with multiple build steps, the duplicate node can also be referenced more than once
+				float w = n.numRefs / (float) target->numRefs; 
+				float wInv = 1. - w;
+
+				// Weighted average
+				target->yuv[0] = target->yuv[0] * wInv + w * n.yuv[0];
+				target->yuv[1] = target->yuv[1] * wInv + w * n.yuv[1];
+				target->yuv[2] = target->yuv[2] * wInv + w * n.yuv[2];
 			}
 			else { // !found
                 uniqueNodesChecker[n] = (id_t)uniqueNodes.size(); // store it as unique node

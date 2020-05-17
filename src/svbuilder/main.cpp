@@ -142,7 +142,7 @@ int main(int argc, char ** argv) {
 			attributes = true;
 	}
 
-	printf("Lossy: %d, Cross-level: %d, Hidden geom: %d\n", lossy, multiLevel, exploitHiddenGeom);
+	printf("Lossy: %d, Cross-level: %d, Hidden geom: %d, attrs: %d\n", lossy, multiLevel, exploitHiddenGeom, attributes);
 
 	GeomOctree octree(&scene);
 
@@ -167,15 +167,18 @@ int main(int argc, char ** argv) {
             octree.toHiddenGeometryDAG();
 		}
 
-		octree.toDAG();
+		if (attributes) {
+			//octree.toAttributeSVO(); // this adds a new leaf level with grayscale attributes
+			octree.propagateYUV(); // this propagates the YUV attrs from leafs to all upper levels
+		}
+
+		octree.toDAG(); // modified for attributes: when merging nodes, average YUV channels as well
 	}
 	else {
 		octree.buildDAG(nLevels, levelStep, sceneBBoxD, true, attributes);
 	}
 
-	if (attributes) {
-		octree.toAttributeSVO();
-	}
+	
 
 	// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
 	// TODO: When scene origin point is inside bbox, weird lines appear along all axes. Maybe fix by moving bbox start to origin?
