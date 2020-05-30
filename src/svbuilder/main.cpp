@@ -245,7 +245,7 @@ int main(int argc, char ** argv) {
 	EncodedSSVDAG esvdag;
 	if (!multiLevel) esvdag.encode(octree);
 
-    if (!multiLevel && !exploitHiddenGeom) {
+    if (!multiLevel && !exploitHiddenGeom && !attributes) {
         octree.toSDAG(false, false);
     }
 
@@ -255,7 +255,7 @@ int main(int argc, char ** argv) {
 	EncodedSSVDAG ssvdag;
 	if (!multiLevel) ssvdag.encode(octree);
 
-    bool saveAll = true;
+    bool saveAll = false;
 
     if (saveAll) {
 		std::string infix = "";

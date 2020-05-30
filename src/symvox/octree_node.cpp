@@ -82,6 +82,13 @@ bool GeomOctree::Node::operator<(const GeomOctree::Node& other) const {
 	if (childrenMirroredBitmask[2] < other.childrenMirroredBitmask[2]) return true;
 	else if (childrenMirroredBitmask[2] > other.childrenMirroredBitmask[2]) return false;
 
+	if (yuv[0] < other.yuv[0]) return true;
+	else if (yuv[0] > other.yuv[0]) return false;
+	if (yuv[1] < other.yuv[1]) return true;
+	else if (yuv[1] > other.yuv[1]) return false;
+	if (yuv[2] < other.yuv[2]) return true;
+	else if (yuv[2] > other.yuv[2]) return false;
+
 	return false;
 }
 

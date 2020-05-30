@@ -169,9 +169,9 @@ void EncodedSVDAG::encode(const GeomOctree & octree) {
 			// Back to RGB from YUV - would be better to do this in shader, more flexibility later for attr compression
 			int y = n.yuv[0], cr = n.yuv[1], cb = n.yuv[2];
 			float r, g, b;
-			r = CYCbCr2R(y, cr, cb);
-			g = CYCbCr2G(y, cr, cb);
-			b = CYCbCr2B(y, cr, cb);
+			r = (int) n.yuv[0] + 128; // CYCbCr2R(y, cr, cb);
+			g = (int) n.yuv[1] + 128; // CYCbCr2G(y, cr, cb);
+			b = (int) n.yuv[2] + 128; // CYCbCr2B(y, cr, cb);
 
 			// A node consists of a header node: The 8-bit bitmask (and experimenting with other 24 bits as attrs) 
 			sl::uint32_t headerNodeData =

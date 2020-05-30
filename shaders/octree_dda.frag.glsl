@@ -96,6 +96,13 @@ layout(location = 0) out vec3 output_t;
 layout(location = 0) out float output_t;
 #endif
 
+// TODO: Shaders probably work better with floats isntead of ints
+//https://stackoverflow.com/questions/1737726/how-to-perform-rgb-yuv-conversion-in-c-c
+#define CLIP(X) ( (X) > 255 ? 255 : (X) < 0 ? 0 : X)
+#define CYCbCr2R(Y, Cb, Cr) CLIP( Y + ( 91881 * Cr >> 16 ) - 179 )
+#define CYCbCr2G(Y, Cb, Cr) CLIP( Y - (( 22544 * Cb + 46793 * Cr ) >> 16) + 135)
+#define CYCbCr2B(Y, Cb, Cr) CLIP( Y + (116129 * Cb >> 16 ) - 226 )
+
 struct Ray {
 	vec3 o;
 	vec3 d;
@@ -429,9 +436,6 @@ void up_in(in const Ray r, inout traversal_status ts) {
 	uint delta_level = ts.level;
 	stack_pop_in(ts.node_index, ts.hdr, ts.mirror_mask, ts.level);
 	delta_level -= ts.level;
-
-	// Subtract popped color from the color sum
-	ts.attr_sum -= get_header_attrs(ts.hdr); // mask is stored in stack y
 	
 	ts.idx >>= delta_level; // always delta_level >= 1
 	ts.cell_size *= (1 << delta_level);  
@@ -471,8 +475,6 @@ void down_in(in const Ray r, inout traversal_status ts) {
 	if (in_bounds(local_idx + delta, 2)) { 
 		stack_push(ts.node_index, ts.hdr, ts.mirror_mask, ts.level);
 		
-		// Add to color sum
-		ts.attr_sum += get_header_attrs(ts.hdr);
 	}
 	  
 	// Go down to next level: Fetch child index (store in node_idx)
@@ -480,7 +482,9 @@ void down_in(in const Ray r, inout traversal_status ts) {
 	fetch_child_index_in(ts);
 	
 	go_down_one_level(r, ts);
-
+	
+	// Add to color sum
+//	ts.attr_sum += get_header_attrs(ts.hdr);
 
 	
 	if (ts.level == INNER_LEVELS) {
@@ -533,7 +537,6 @@ void init(inout Ray r, inout traversal_status ts) {
 	ts.mirror_mask = ivec3(0,0,0);
 	ts.level = 0;
 	ts.cell_size = 0.5;
-	ts.attr_sum = vec3(0);
 	
 	// Step status
 	dda_init(r, ts);
@@ -541,7 +544,9 @@ void init(inout Ray r, inout traversal_status ts) {
 	
 	ts.node_index = 0;
 	fetch_data(ts);
-	ts.child_linear_index =  voxel_to_linear_idx(ts.mirror_mask, ts.local_idx, ts.current_node_size);
+	ts.child_linear_index = voxel_to_linear_idx(ts.mirror_mask, ts.local_idx, ts.current_node_size);
+	
+	ts.attr_sum = vec3(0.5); // get_header_attrs(ts.hdr); // root node color
 }
 
 // TRACE RAY
@@ -567,6 +572,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 	init(r, ts);
 
 	ivec3 stepDir = ivec3(0);
+	vec3 avgStepDir = vec3(0);
 
 	// TODO: Each traversal iteration, re-use the attributes of the parent
 	// sum up the attributes, divide by the nr of iterations at the end?
@@ -579,19 +585,23 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 	  
 		if (!full_voxel) {
 			stepDir = dda_next(ts);
+			avgStepDir = avgStepDir * 0.5 + 0.5 * stepDir;
 			if (!in_bounds(ts.local_idx, ts.current_node_size)) {
 				if (stack_is_empty()) {
 					return vec4(-1.,0,float(iteration_count),-1); // inside scene BBox, but no intersection
 				}
+				ts.attr_sum -= get_header_attrs(ts.hdr) - vec3(0.5);
 				up_in(r, ts);
 			}
 		} else {
 			const bool hit = (ts.level >= max_level || resolution_ok(ts.t_current, ts.cell_size, projection_factor)); 
 			if (hit) {
+				// Todo: Sample last few steps as norm: nope doesn't work
 				norm = -vec3(stepDir);
+				//norm = -avgStepDir;
 				
 				// Add to color sum
-				// ts.attr_sum += get_header_attrs(ts.hdr);
+//				ts.attr_sum += get_header_attrs(ts.hdr);
 				
 				ts_out = ts;
 
@@ -599,6 +609,7 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 			} else {
 				down_in(r, ts);
 				fetch_data(ts);
+				ts.attr_sum += get_header_attrs(ts.hdr) - vec3(0.5);
 			}
 		}
 	    
@@ -824,9 +835,20 @@ void main() {
 #endif
 		// Assign random colors based on the index of a node
 		else if (randomColors) {
-			// vec3 randomColor = get_header_attrs(ts.hdr);
+			vec3 c = ts.attr_sum * 255.; //  get_header_attrs(ts.hdr) * 255.; //
+			int y = int(c.x), cr = int(c.y), cb = int(c.z);
+			// yuv to rgb
+			vec3 randomColor = vec3(
+				CYCbCr2R(y, cr, cb),
+				CYCbCr2G(y, cr, cb),
+				CYCbCr2B(y, cr, cb)
+			) / vec3(255.);
+
+			//int hitLev = int(result.y);
+			//vec3 randomColor = vec3(stack_size / 15.);
+			//vec3 randomColor = get_header_attrs(stack[stack_size - 1].y);
 			// Todo: we need to sample neighboring nodes as well to avoid blocky colors... hmm
-			vec3 randomColor = ts.attr_sum / float(stack_size); //result.y; // sum of attrs or all nodes / number of levels
+			// vec3 randomColor = ts.attr_sum / float(stack_size); //result.y; // sum of attrs or all nodes / number of levels
 
 			// old idea: store attr in pointers
 			// new: store in header padding
@@ -854,25 +876,25 @@ void main() {
 		} 
 
 		// ====Shadow====
-		if (result.x >= 0 && enableShadows) {
-			// Trace ray to light pos
-			const vec3 p = hitPos + hitNorm * cellSize * 0.5f; // center of voxel + half voxel size in dir of normal
-			const vec3 lightToP = p - lightPos;
-			const float lightToPLength = length(lightToP);
-
-			const float sProjFactor = lightToPLength / cellSize;
-
-			r.o = p;
-			r.d = -normalize(lightToP);
-			vec2 t_min_max = vec2(0, lightToPLength);
-			stack_size = 0; // not sure why it needs to be reset, but else it causes artifacts
-			traversal_status ts_ignore;
-			vec4 shd_result = trace_ray(r, t_min_max * 0.5, sProjFactor, hitNorm, ts_ignore);
-
-			// Add shadows
-			color *= (shd_result.x > 0) ? 0.8 : 1;
-//				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
-		}
+//		if (result.x >= 0 && enableShadows) {
+//			// Trace ray to light pos
+//			const vec3 p = hitPos + hitNorm * cellSize * 0.5f; // center of voxel + half voxel size in dir of normal
+//			const vec3 lightToP = p - lightPos;
+//			const float lightToPLength = length(lightToP);
+//
+//			const float sProjFactor = lightToPLength / cellSize;
+//
+//			r.o = p;
+//			r.d = -normalize(lightToP);
+//			vec2 t_min_max = vec2(0, lightToPLength);
+//			stack_size = 0; // not sure why it needs to be reset, but else it causes artifacts
+//			traversal_status ts_ignore;
+//			vec4 shd_result = trace_ray(r, t_min_max * 0.5, sProjFactor, hitNorm, ts_ignore);
+//
+//			// Add shadows
+//			color *= (shd_result.x > 0) ? 0.8 : 1;
+////				t = shd_result.x > 0 ? t : (1.0 - shd_result.x / length(sceneBBoxMax-sceneBBoxMin));
+//		}
 	}
 	else {
 		if (result.x == -1. || result.x == -2.

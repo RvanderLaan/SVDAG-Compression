@@ -303,7 +303,8 @@ void GeomOctree::buildSVO(unsigned int levels, sl::aabox3d bbox, bool internalCa
 							// meh, good enough for now. Maybe encode as 64-bit leaf nodes?
 							// might work with 32 bit when only storing chroma difference from parent
 							// (4 bits per voxel available, should be fine in most cases)
-							//RGBToYUV(color, yuvContainer);
+
+							// RGB
 							int r = int(color[0] * 255.),
 								g = int(color[1] * 255.),
 								b = int(color[2] * 255.);
@@ -556,7 +557,7 @@ void GeomOctree::toDAG(bool iternalCall) {
 	_nNodes = 1;
     /** Every index denotes the index of the first duplicate of that node in uniqueNodes. Reset for each level. */
 	std::vector<id_t> correspondences;
-	std::map<Node, id_t> uniqueNodesChecker;
+	std::multimap<Node, id_t> uniqueNodesChecker; // map of a node to all nodes with the same geometry, but different attributes
 	std::vector<Node> uniqueNodes;
 
 	 sl::time_point ts = _clock.now();
@@ -574,16 +575,67 @@ void GeomOctree::toDAG(bool iternalCall) {
 		correspondences.clear();
 		correspondences.resize(oldLevSize);
 
+		//if (lev != _levels - 1) {
+		//	printf("\tPropagating YUV attributes to each parent node as average of children...\n");
+
+		//	// For every node in this level...
+		//	for (auto &n : _data[lev]) {
+		//		for (int i = 0; i < 8; i++) {
+		//			if (n.existsChild(i)) {
+		//				// Add up the YUV components in the parent
+		//				for (unsigned int chan = 0; chan < 3; chan++) {
+		//					n.yuv[chan] += _data[lev + 1][n.children[i]].yuv[chan];
+		//				}
+		//			}
+		//		}
+
+		//		// Divide by number of children to get average
+		//		float numChildren = (float)n.getNChildren();
+		//		for (unsigned int chan = 0; chan < 3; chan++) {
+		//			n.yuv[chan] /= numChildren;
+		//		}
+		//	}
+		//}
+
+		int maxNumCandidates = -1;
+
         // For all nodes in this level...
 		for (id_t i = 0; i < _data[lev].size(); i++) {
 			Node n = _data[lev][i];
 			if (!n.hasChildren()) continue; // skip empty nodes
-            auto k = uniqueNodesChecker.find(n); // find if duplicate
 
-			if (k != uniqueNodesChecker.end()) { // found
-                correspondences[i] = (*k).second; // store duplicate node
-				auto target = &(uniqueNodes[k->second]);
+            //auto k = uniqueNodesChecker.find(n); // find if duplicate
+			auto candidates = uniqueNodesChecker.equal_range(n);
+			int numCands = 0;
 
+			bool foundMatch = false;
+
+			//if (k != uniqueNodesChecker.end()) { // found
+			for (auto it = candidates.first; it != candidates.second; ++it) {
+				numCands++;
+				id_t targetId = it->second;
+				auto target = &(uniqueNodes[targetId]);
+
+				// new experiment: Only merge if attributes are similar
+				// TODO: Look for all matches in uniqueNodes; not just the first one
+				// Multi-map again
+				// Ok done!
+				// New TODO: Find the one with closest attributes, not the first one below the threshold (clustering again?)
+				// another TODO: Only leaf nodes have attributes up to this point
+				// so merging like this only is effective there. The propagation needs to be done before merging nodes at each level
+				const double MAX_DIFF = 50.;
+				if ((
+					abs(n.yuv[0] - target->yuv[0]) > MAX_DIFF ||
+					abs(n.yuv[1] - target->yuv[1]) > MAX_DIFF ||
+					abs(n.yuv[2] - target->yuv[2]) > MAX_DIFF
+				)) {
+					it = candidates.second;
+					continue;
+				}
+
+				foundMatch = true;
+
+				correspondences[i] = targetId; // store duplicate node
 
 				// experiment: store average color value
 				// New total amount that this node is referenced
@@ -599,12 +651,18 @@ void GeomOctree::toDAG(bool iternalCall) {
 				target->yuv[1] = target->yuv[1] * wInv + w * n.yuv[1];
 				target->yuv[2] = target->yuv[2] * wInv + w * n.yuv[2];
 			}
-			else { // !found
-                uniqueNodesChecker[n] = (id_t)uniqueNodes.size(); // store it as unique node
+			if (!foundMatch) {
+				//else { // !found
+					// uniqueNodesChecker[n] = (id_t)uniqueNodes.size(); // store it as unique node
+				uniqueNodesChecker.insert(std::make_pair(n, (id_t)uniqueNodes.size()));
                 correspondences[i] = (id_t)uniqueNodes.size(); // the correspondence is this node itself
 				uniqueNodes.push_back(n);
 			}
+			if (numCands > maxNumCandidates) {
+				maxNumCandidates = numCands;
+			}
 		}
+		printf("Max num candidates for lev %u: %i\n", lev, maxNumCandidates);
 
 		if (!iternalCall)
             printf("Reduced level %u from %lu to %lu nodes\n", lev, _data[lev].size(), uniqueNodes.size());

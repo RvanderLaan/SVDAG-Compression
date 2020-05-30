@@ -2181,6 +2181,16 @@ void GeomOctree::propagateYUV() {
 			for (unsigned int chan = 0; chan < 3; chan++) {
 				n.yuv[chan] /= numChildren;
 			}
+
+			// Store difference to average in children
+			for (int i = 0; i < 8; i++) {
+				if (n.existsChild(i)) {
+					for (unsigned int chan = 0; chan < 3; chan++) {
+						float childColor = _data[lev + 1][n.children[i]].yuv[chan];
+						_data[lev + 1][n.children[i]].yuv[chan] = childColor - n.yuv[chan];
+					}
+				}
+			}
 		}
 	}
 }
