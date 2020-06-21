@@ -609,7 +609,9 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 			} else {
 				down_in(r, ts);
 				fetch_data(ts);
-				ts.attr_sum += get_header_attrs(ts.hdr) - vec3(0.5);
+				if (fetch_voxel_bit(ts)) {
+					ts.attr_sum += get_header_attrs(ts.hdr) - vec3(0.5);
+				}
 			}
 		}
 	    
