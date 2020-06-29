@@ -16,9 +16,16 @@
     #canvas {
       /* width: 600px;
       height: 600px; */
-      margin: auto;
-      display: block;
+      display: inline-block;
       outline: 1px solid black;
+      margin: 32px;
+    }
+    
+    #canvas-graph {
+      margin: auto;
+      display: inline-block;
+      outline: 1px solid black;
+      margin: 32px;
     }
   </style>
 </head>
@@ -30,7 +37,8 @@
       <span>Click anywhere to place nodes. Ctrl+click to select & view neighbors</span>
     </div>
     <canvas id="canvas"></canvas>
+    <canvas id="canvas-graph"></canvas>
   </div>
 
-  <script src="main.js"></script>
+  <script src="build/main.js" type="module"></script>
 </body>

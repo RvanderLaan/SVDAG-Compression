@@ -1,3 +1,5 @@
+import GraphRenderer from './graph-renderer.js';
+
 
 const wait = async (time = 500) => new Promise((resolve) => setTimeout(resolve, time));
 
@@ -5,13 +7,13 @@ const wait = async (time = 500) => new Promise((resolve) => setTimeout(resolve, 
 ///// QUAD TREE /////
 /////////////////////
 
-const nullNode = Number.MAX_VALUE;
+export const NULL_NODE = Number.MAX_VALUE;
 
 const NCHILDREN = 4; // quad tree
 
 type NodeData = QuadTreeNode[][];
 
-class QuadTreeNode {
+export class QuadTreeNode {
   childrenBitmask: boolean[];
   children: number[];
   outsideMask: boolean[];
@@ -29,7 +31,7 @@ class QuadTreeNode {
     this.outsideMask = [];
     for (let i = 0; i < NCHILDREN; i++) {
       this.childrenBitmask[i] = false;
-      this.children[i] = nullNode;
+      this.children[i] = NULL_NODE;
       this.outsideMask[i] = false;
     }
 
@@ -46,7 +48,7 @@ class QuadTreeNode {
 
   unsetChild(i: number) {
     this.childrenBitmask[i] = false;
-    this.children[i] = nullNode;
+    this.children[i] = NULL_NODE;
   }
 
   hasChildren(): boolean {
@@ -114,7 +116,7 @@ class QuadTreeNode {
   }
 }
 
-class QuadTree {
+export class QuadTree {
   nLevels: number;
   data: NodeData;
 
@@ -423,14 +425,15 @@ const floodFill = (data: NodeData) => {
 ////////////////////////
 ////// MAIN ////////////
 ////////////////////////
-const nLevels = 6;
+const nLevels = 5;
 const resolution = Math.pow(2, nLevels);
 
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
+const graphCanvas = document.querySelector<HTMLCanvasElement>('#canvas-graph');
 const ctx = canvas.getContext('2d');
 ctx.lineWidth = 1;
 
-const canvasSize = 1024;
+export const canvasSize = 800;
 canvas.width = canvasSize;
 canvas.height = canvasSize;
 
@@ -438,6 +441,8 @@ const cellSize = canvasSize / resolution;
 
 const tree = new QuadTree(nLevels);
 let selectedNode: TravNode | undefined;
+
+const graphRenderer = new GraphRenderer(tree, graphCanvas);
 
 const render = (nbs?: QuadTreeNode[]) => {
   ctx.fillStyle = 'white';
@@ -452,6 +457,8 @@ const render = (nbs?: QuadTreeNode[]) => {
     ctx.lineWidth = 6;
     nbs.forEach((nb) => nb.draw(true));
   }
+
+  graphRenderer.render();
 }
 
 const draw = (e: MouseEvent) => {
@@ -482,7 +489,7 @@ canvas.addEventListener('keydown', e => {
 render();
 
 // Tool box event handlers
-const handleFloodFill = () => {
+(window as any).handleFloodFill = () => {
   floodFill(tree.data);
   render();
 }
