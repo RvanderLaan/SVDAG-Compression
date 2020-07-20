@@ -132,8 +132,10 @@ struct traversal_status {
 
 #define MAX_STACK_DEPTH (INNER_LEVELS+1)
 
-ivec3 stack[MAX_STACK_DEPTH]; // stack of ivec3(nodeIndex, hdr, mask) for each traversal level 
+ivec3 stack[MAX_STACK_DEPTH]; // stack of ivec3(nodeIndex, header, mask) for each traversal level 
 uint stack_size = 0;
+
+vec3 color_stack[MAX_STACK_DEPTH];
 
 vec3 get_header_attrs(uint hdr) {
 	vec3 res = vec3(0);
@@ -436,6 +438,10 @@ void up_in(in const Ray r, inout traversal_status ts) {
 	uint delta_level = ts.level;
 	stack_pop_in(ts.node_index, ts.hdr, ts.mirror_mask, ts.level);
 	delta_level -= ts.level;
+
+//	if (abs(delta_level) > 1u) { // why can the traversal level be so much higher between 2 stack positions?!
+//		return; // debug return
+//	}
 	
 	ts.idx >>= delta_level; // always delta_level >= 1
 	ts.cell_size *= (1 << delta_level);  
@@ -472,9 +478,11 @@ void down_in(in const Ray r, inout traversal_status ts) {
 	const ivec3 local_idx = ts.local_idx;
 	const ivec3 delta = dda_next_delta_index(ts);    
 	
-	if (in_bounds(local_idx + delta, 2)) { 
+	// not sure why the in_bounds check is needed. Seems like this should be always happening
+	// Test whether the if can be removed -> no, it cannot
+	// Maybe: When the next position is outside this node, having no stack item will allow us to immediately go up to the best parent to go into the neighboring node
+	if (in_bounds(local_idx + delta, 2)) {
 		stack_push(ts.node_index, ts.hdr, ts.mirror_mask, ts.level);
-		
 	}
 	  
 	// Go down to next level: Fetch child index (store in node_idx)
@@ -482,10 +490,6 @@ void down_in(in const Ray r, inout traversal_status ts) {
 	fetch_child_index_in(ts);
 	
 	go_down_one_level(r, ts);
-	
-	// Add to color sum
-//	ts.attr_sum += get_header_attrs(ts.hdr);
-
 	
 	if (ts.level == INNER_LEVELS) {
 
@@ -546,7 +550,7 @@ void init(inout Ray r, inout traversal_status ts) {
 	fetch_data(ts);
 	ts.child_linear_index = voxel_to_linear_idx(ts.mirror_mask, ts.local_idx, ts.current_node_size);
 	
-	ts.attr_sum = vec3(0.5); // get_header_attrs(ts.hdr); // root node color
+//	ts.attr_sum = vec3(0.5); // get_header_attrs(ts.hdr); // root node color
 }
 
 // TRACE RAY
@@ -572,46 +576,67 @@ vec4 trace_ray(in Ray r, in vec2 t_min_max, const in float projection_factor, ou
 	init(r, ts);
 
 	ivec3 stepDir = ivec3(0);
-	vec3 avgStepDir = vec3(0);
 
 	// TODO: Each traversal iteration, re-use the attributes of the parent
 	// sum up the attributes, divide by the nr of iterations at the end?
 	// (later, the luma can have higher influence than chroma)
-	
+
+	for (int i = 0; i < MAX_STACK_DEPTH; i++) {
+		color_stack[i] = vec3(0);
+	}
+
+	// Root node color
+	ts.attr_sum = vec3(0.); // get_header_attrs(ts.hdr) - vec3(0.5);
+//	color_stack[stack_size] += ts.attr_sum;
+
 	int iteration_count = 0;
 	const uint max_level = min(INNER_LEVELS, drawLevel-1);
 	do {
 		bool full_voxel = fetch_voxel_bit(ts);
 	  
+		// If the current child-mask bit is not set, traverse the ray to the next adjacent node
 		if (!full_voxel) {
+			// Take a step to the next node - either child of same parent or a neighbouring node of a different parent
 			stepDir = dda_next(ts);
-			avgStepDir = avgStepDir * 0.5 + 0.5 * stepDir;
+
+			// If the step took us outside of the current node, traverse back up the graph
 			if (!in_bounds(ts.local_idx, ts.current_node_size)) {
 				if (stack_is_empty()) {
 					return vec4(-1.,0,float(iteration_count),-1); // inside scene BBox, but no intersection
 				}
-				ts.attr_sum -= get_header_attrs(ts.hdr) - vec3(0.5);
+				
+				// Subtract the color we added to the attribute sum earlier
+//				vec3 color = get_header_attrs(ts.hdr) - vec3(0.5);
+				ts.attr_sum -= color_stack[stack_size];
+				color_stack[stack_size] = vec3(0);
+
 				up_in(r, ts);
 			}
 		} else {
 			const bool hit = (ts.level >= max_level || resolution_ok(ts.t_current, ts.cell_size, projection_factor)); 
 			if (hit) {
-				// Todo: Sample last few steps as norm: nope doesn't work
 				norm = -vec3(stepDir);
-				//norm = -avgStepDir;
 				
 				// Add to color sum
-//				ts.attr_sum += get_header_attrs(ts.hdr);
+				ts.attr_sum += get_header_attrs(ts.hdr);
+
+//				ts.attr_sum /= float(stack_size);
 				
 				ts_out = ts;
 
 				return vec4(ts.t_current * scale, ts.level, float(iteration_count), ts.node_index);  // intersection
 			} else {
+				// IT WAS BEFORE HERE FIRST <<<<---
+
+				// Step down into a child node
 				down_in(r, ts);
 				fetch_data(ts);
-				if (fetch_voxel_bit(ts)) {
-					ts.attr_sum += get_header_attrs(ts.hdr) - vec3(0.5);
-				}
+
+				// NOW HERE!!! IT WORKS !!!!!!!!!!!! SO MANY WEEKS/EVENINGS!!!
+				vec3 color = get_header_attrs(ts.hdr) - vec3(0.5);
+				color_stack[stack_size] += color;
+				// Add current node's color to the result color
+				ts.attr_sum += color;
 			}
 		}
 	    
@@ -837,14 +862,17 @@ void main() {
 #endif
 		// Assign random colors based on the index of a node
 		else if (randomColors) {
-			vec3 c = ts.attr_sum * 255.; //  get_header_attrs(ts.hdr) * 255.; //
-			int y = int(c.x), cr = int(c.y), cb = int(c.z);
+//			ivec3 yuv = ivec3(get_header_attrs(ts.hdr) * 255.); // for only leaf colors
+			ivec3 yuv = ivec3(ts.attr_sum * 255.); // for hierarchical addition
 			// yuv to rgb
 			vec3 randomColor = vec3(
-				CYCbCr2R(y, cr, cb),
-				CYCbCr2G(y, cr, cb),
-				CYCbCr2B(y, cr, cb)
+				CYCbCr2R(yuv.x, yuv.y, yuv.z), // todo: flip cr & cb?
+				CYCbCr2G(yuv.x, yuv.y, yuv.z),
+				CYCbCr2B(yuv.x, yuv.y, yuv.z)
 			) / vec3(255.);
+
+//			randomColor = ts.attr_sum;
+//			randomColor = vec3(y / 255.0f);
 
 			//int hitLev = int(result.y);
 			//vec3 randomColor = vec3(stack_size / 15.);
