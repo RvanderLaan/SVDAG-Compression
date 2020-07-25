@@ -78,7 +78,7 @@ OctreeDDARenderer::OctreeDDARenderer(EncodedOctree * eo) {
 	_sdag4UseTex3D = false;
 }
 
-void OctreeDDARenderer::uploadData(bool init) {
+void OctreeDDARenderer::uploadData(bool init, int slot) {
 	GLint tmp;
 	glGetIntegerv(GL_MAX_TEXTURE_BUFFER_SIZE, &tmp);
 	const unsigned int maxTBOTexels = (unsigned int)tmp;
@@ -105,15 +105,19 @@ void OctreeDDARenderer::uploadData(bool init) {
 		glBindBuffer(GL_TEXTURE_BUFFER, 0);
 	}
 	else if (_octreeFormat == SVDAG) {
-		EncodedSVDAG * dag = static_cast<EncodedSVDAG *>(_encodedOctree);
-		if (init) glGenBuffers(1, _glBuf);
-		if (init) glGenTextures(1, _glTex);
-		glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
-		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[0]);
+		EncodedSVDAG * dag = static_cast<EncodedSVDAG *>(slot == 0 ? _encodedOctree : _encodedOctree2);
+		if (init) {
+			glGenBuffers(1, &_glBuf[0]);
+			glGenTextures(1, &_glTex[0]);
+			glGenBuffers(1, &_glBuf[1]);
+			glGenTextures(1, &_glTex[1]);
+		}
+		glBindTexture(GL_TEXTURE_BUFFER, _glTex[slot]);
+		glBindBuffer(GL_TEXTURE_BUFFER, _glBuf[slot]);
 		if ((dag->getDataSize() / 16) > maxTBOTexels) printf("\t- WARNING! "); else printf("\t- ");
 		printf("Uploading Data to TBO: %zu texels [%s]\n", dag->getDataSize() / 16, sl::human_readable_size(dag->getDataSize()).c_str());
 		glBufferData(GL_TEXTURE_BUFFER, dag->getDataSize(), dag->getDataPtr(), GL_DYNAMIC_DRAW);
-		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[0]);
+		glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, _glBuf[slot]);
 		glBindTexture(GL_TEXTURE_BUFFER, 0);
 		glBindBuffer(GL_TEXTURE_BUFFER, 0);
 	}
@@ -318,6 +322,7 @@ void OctreeDDARenderer::init() {
 			glUniform1i(_program[i].getUniformID("childIndir"), 2);
 		} else {
 			glUniform1i(_program[i].getUniformID("nodes"), 0);
+			glUniform1i(_program[i].getUniformID("nodes2"), 1);
 		}
 
 		printf("\t\t - OK!\n");
@@ -369,6 +374,9 @@ void OctreeDDARenderer::resetState() {
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_BUFFER, _glTex[0]);
 
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_BUFFER, _glTex[1]); // comparison scene
+
 	if (_octreeFormat == SSVDAG) {
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture((_sdag4UseTex3D ? GL_TEXTURE_3D : GL_TEXTURE_BUFFER), _glTex[1]);
@@ -384,7 +392,7 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 
 	//resetState();
 	_rendererMonitor.beginFrame();
-	printfGLError();
+	//printfGLError();
 
 	if (_useMinDepthOptimization && (_selectedRenderMode == VIEWER || _selectedRenderMode == DEPTH)) {
 		glUseProgram(_program[DEPTH].getGLProgram());
@@ -440,7 +448,7 @@ void OctreeDDARenderer::draw(GLint renderBuffer) {
 
 	_sqr.draw();
 	_rendererMonitor.endFrame();
-	printfGLError();
+	//printfGLError();
 	//clearState();
 }
 

@@ -46,7 +46,7 @@ public:
 
 public:
 	OctreeDDARenderer(EncodedOctree * eo);
-	virtual void uploadData(bool init = false);
+	virtual void uploadData(bool init = false, int slot = 0);
 	virtual void init();
 	virtual void draw(GLint renderBuffer = 0);
 	virtual void clearState();
@@ -71,6 +71,7 @@ public:
 
 	inline sl::aabox3f getSceneBBox() { return _encodedOctree->getSceneBBox(); }
 	inline void setEncodedOctree(EncodedOctree * eo) { _encodedOctree = eo; }
+	inline void setEncodedOctree2(EncodedOctree * eo) { _encodedOctree2 = eo; }
 
 	inline void setDrawLevel(unsigned int dl) { _drawLevel = sl::max(1U, sl::min(dl, getNLevels())); }
 	inline void incDrawLevel(int k = 1) { setDrawLevel(_drawLevel + k); }
@@ -111,7 +112,7 @@ public:
 	float getProjectionFactor(float pixelTolerance, float screenDivisor = 1.0f);
 
 protected:
-	EncodedOctree* _encodedOctree;
+	EncodedOctree* _encodedOctree, * _encodedOctree2;
 	ScreenQuadRenderer _sqr;
 	GLSLProgram _program[4];
 	RenderMode _selectedRenderMode;

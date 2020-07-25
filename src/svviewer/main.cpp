@@ -51,7 +51,7 @@ static char recordingInput[128] = "";
 static char loadRecordingInput[128] = "";
 
 OctreeDDARenderer * renderer;
-EncodedOctree* encoded_octree;
+EncodedOctree* encoded_octree, *encoded_octree2;
 RendererMonitor::FrameStats frameStats;
 GLFWwindow * window;
 Camera * cam;
@@ -182,29 +182,39 @@ void updateInfo() {
 	glfwSetWindowTitle(window, winMsg);
 }
 
-bool loadFile(std::string inputFile) {
+bool loadFile(std::string inputFile, int slot = 0) {
 	filename = sl::pathname_base(inputFile);
 	std::string ext = sl::pathname_extension(inputFile);
 	bool incorrectFile = false;
 
-	if (encoded_octree != nullptr)
-        delete encoded_octree;
+	EncodedOctree* enc_octree = slot == 0 ? encoded_octree : encoded_octree2;
+
+	if (enc_octree != nullptr)
+        delete enc_octree;
 
 	if (ext == "svdag" || ext == "SVDAG") {
-		encoded_octree = new EncodedSVDAG();
-		if (!encoded_octree->load(inputFile)) incorrectFile = true;
+		enc_octree = new EncodedSVDAG();
+		if (!enc_octree->load(inputFile)) incorrectFile = true;
 	}
 	else if (ext == "ussvdag" || ext == "USSVDAG") {
-		encoded_octree = new EncodedUSSVDAG();
-		if (!encoded_octree->load(inputFile)) incorrectFile = true;
+		enc_octree = new EncodedUSSVDAG();
+		if (!enc_octree->load(inputFile)) incorrectFile = true;
 	}
 	else if (ext == "ssvdag" || ext == "SSVDAG"
 		  || ext == "esvdag" || ext == "ESVDAG") {
-		encoded_octree = new EncodedSSVDAG();
-		if (!encoded_octree->load(inputFile)) incorrectFile = true;
+		enc_octree = new EncodedSSVDAG();
+		if (!enc_octree->load(inputFile)) incorrectFile = true;
 	}
 	else
 		incorrectFile = true;
+
+	if (slot == 0) {
+		encoded_octree = enc_octree;
+	}
+	else {
+		encoded_octree2 = enc_octree;
+	}
+
 	return incorrectFile;
 }
 
@@ -254,10 +264,10 @@ void handleImgui() {
         ImGui::SameLine();
         doLoadFile2 = doLoadFile2 || ImGui::Button("Load file slot 2");
         if (doLoadFile2) {
-            bool error = loadFile(filenameInput2);
+            bool error = loadFile(filenameInput2, 1);
             if (!error) {
-                renderer->setEncodedOctree(encoded_octree);
-                renderer->uploadData();
+                renderer->setEncodedOctree2(encoded_octree2);
+                renderer->uploadData(false, 1);
             }
         }
 

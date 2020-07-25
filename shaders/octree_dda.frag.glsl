@@ -42,6 +42,11 @@ uniform float projectionFactor;
 
 #if (SVDAG || USSVDAG)
 uniform usamplerBuffer nodes;
+
+// secondary node array for rendering difference between two scenes (e.g. original vs lossy compression)
+uniform usamplerBuffer nodes2; 
+bool renderingPrimaryScene = true;
+
 #elif (SSVDAG)
 #if SSVDAG_TEX3D
 uniform usampler3D innerNodes;
@@ -159,7 +164,13 @@ uint myFetch(in const int idx) {
 	// On AMD GPUs this causes some problems for files > 32 MM. Took some time to find this out
 	// The idx is signed, so cast it to unsigned
 	// const uvec4 tmp = texelFetch(nodes, idx/4);
-	const uvec4 tmp = texelFetch(nodes, int(uint(idx)/4));
+
+	uvec4 tmp = uvec4(0);
+	if (renderingPrimaryScene) {
+		tmp = texelFetch(nodes, int(uint(idx)/4));
+	} else {
+		tmp = texelFetch(nodes2, int(uint(idx)/4));
+	}
 
 	const int selected = idx%4;
 	uint result;
@@ -678,7 +689,7 @@ void main() {
 		return;
 	}
 #endif
-	const float epsilon = 1E-3f;
+	const float epsilon = 1E-5f;
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) - epsilon : 0, 1e30); // subtract epsilon for getting proper normal
 	vec3 hitNorm;
 	vec4 result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
@@ -702,7 +713,7 @@ void main() {
 		else if (viewerRenderMode == 3) { // PRETTY
 
 			// ====Base color, based on depth====
-			t = 1.0;// - result.x / length(sceneBBoxMax-sceneBBoxMin);
+			t = 1.0; // - result.x / length(sceneBBoxMax-sceneBBoxMin);
 
 
 			// ====Voxel normal direction====
@@ -791,12 +802,34 @@ void main() {
 #endif
 		// Assign random colors based on the index of a node
 		else if (randomColors) {
-			vec3 randomColor = normalize(vec3(
-				(nodeIndex % 100) / 100.f,
-				((3 * nodeIndex) % 200) / 200.f,
-				((2 * nodeIndex) % 300) / 300.f
-			));
-			color *= randomColor;
+//			vec3 randomColor = normalize(vec3(
+//				(nodeIndex % 100) / 100.f,
+//				((3 * nodeIndex) % 200) / 200.f,
+//				((2 * nodeIndex) % 300) / 300.f
+//			));
+//			color *= randomColor;
+
+			// Scene comparison
+			renderingPrimaryScene = false;
+			stack_size = 0;
+
+			t_min_max.x = result.x - cellSize * 32.;
+			t_min_max.y = result.x + cellSize * 32.;
+
+			vec4 result2 = trace_ray(r, t_min_max, projectionFactor, hitNorm);
+
+			// Hit position = camera origin + depth * ray direction
+			vec3 hitPos2 = r.o + result2.x * r.d;
+			float dist = result2.x - result.x; 
+			if (dist < -epsilon) {
+				// Mark removed voxels as red
+				color.r = 1.0;
+				color.gb *= 0.5;
+			} else if (dist > epsilon) {
+				// Mark added voxels as green
+				color.g = 1.0;
+				color.rb *= 0.5;
+			}
 		} 
 
 		// ====Shadow====
