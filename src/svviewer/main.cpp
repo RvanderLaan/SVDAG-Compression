@@ -315,33 +315,36 @@ void handleImgui() {
 		if (doRecord) cam->loadWalkthrough(loadRecordingInput);
 
 		if (ImGui::Button(cam->isPlayingWalkthrough() ? "Stop playing" : "Play walkthrough")) {
-			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough();
+			if (cam->isPlayingWalkthrough()) cam->stopWalkthrough();
+			else cam->playWalkthrough();
 		}
 		ImGui::SameLine();
 		if (ImGui::Button(cam->isPlayingWalkthrough() ? "Stop playing" : "Play walkthrough (smooth)")) {
-			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough(15);
+			if (cam->isPlayingWalkthrough()) cam->stopWalkthrough();
+			else cam->playWalkthrough(15);
 		}
 		ImGui::SameLine();
 		if (ImGui::Button(cam->isPlayingWalkthrough() ? "Stop playing" : "Play walkthrough (super smooth)")) {
-			cam->isPlayingWalkthrough() ? cam->stopWalkthrough() : cam->playWalkthrough(60);
+			if (cam->isPlayingWalkthrough()) cam->stopWalkthrough();
+			else cam->playWalkthrough(60);
 		}
 
 		if (ImGui::DragFloat3("Light position", lightPosInput, 2)) {
 			renderer->setLightPos(sl::point3f(lightPosInput[0], lightPosInput[1], lightPosInput[2]));
 		}
 
-        if (ImGui::Combo("Render mode", &renderModeInput, renderModes, IM_ARRAYSIZE(renderModes))) {
-            renderer->setViewerRenderMode(renderModeInput);
-        }
+		if (ImGui::Combo("Render mode", &renderModeInput, renderModes, IM_ARRAYSIZE(renderModes))) {
+				renderer->setViewerRenderMode(renderModeInput);
+		}
 
-        if (ImGui::Button("Set light pos at camera")) {
-            renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
-        }
+		if (ImGui::Button("Set light pos at camera")) {
+				renderer->setLightPos(renderer->getCamera()->getCurrentConfig().pos);
+		}
 
-        // todo: show count, # references (per level), etc. + delete button
-        ImGui::Text("Selected voxel index (Hover + Enter): %i", renderer->getSelectedVoxelIndex());
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
-                    ImGui::GetIO().Framerate);
+		// todo: show count, # references (per level), etc. + delete button
+		ImGui::Text("Selected voxel index (Hover + Enter): %i", renderer->getSelectedVoxelIndex());
+		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
+								ImGui::GetIO().Framerate);
     }
 	ImGui::End();
 }
