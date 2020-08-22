@@ -689,6 +689,7 @@ void main() {
 		return;
 	}
 #endif
+	// const float epsilon = 1E-5f;
 	const float epsilon = 1E-5f;
 	vec2 t_min_max = vec2(useMinDepthTex ? getMinT(8) - epsilon : 0, 1e30); // subtract epsilon for getting proper normal
 	vec3 hitNorm;
@@ -699,7 +700,7 @@ void main() {
 	const float cellSize = 2. * rootHalfSide / pow(2, result.y);
 	uint nodeIndex = uint(result.w);
 
-//	const float localEpsilon = 1E-3f * result.y;
+	const float localEpsilon = cellSize / 100.0f;
 	
 	if (result.x >= 0) // Intersection!!!
 	{
@@ -813,22 +814,24 @@ void main() {
 			renderingPrimaryScene = false;
 			stack_size = 0;
 
-			t_min_max.x = result.x - cellSize * 32.;
-			t_min_max.y = result.x + cellSize * 32.;
+			t_min_max.x = result.x - cellSize * 64.;
+			t_min_max.y = result.x + cellSize * 64.;
 
 			vec4 result2 = trace_ray(r, t_min_max, projectionFactor, hitNorm);
 
 			// Hit position = camera origin + depth * ray direction
 			vec3 hitPos2 = r.o + result2.x * r.d;
+
+			vec3 lightDir = normalize(lightPos - hitPos2);
+			float result2Diffuse = 0.5 + 0.5 * max(dot(hitNorm, lightDir), 0);
+
 			float dist = result2.x - result.x; 
-			if (dist < -epsilon) {
+			if (dist < -localEpsilon) {
 				// Mark removed voxels as red
-				color.r = 1.0;
-				color.gb *= 0.5;
-			} else if (dist > epsilon) {
+				color = result2Diffuse * vec3(1.0, 0.5, 0.5);
+			} else if (dist > localEpsilon) {
 				// Mark added voxels as green
-				color.g = 1.0;
-				color.rb *= 0.5;
+				color = result2Diffuse * vec3(0.5, 1.0, 0.5);
 			}
 		} 
 
@@ -867,7 +870,7 @@ void main() {
 		
 		else if (result.x == -3.) // too many iterations
 		{
-			color = vec3(1.,0,0);
+			color = vec3(0.9,0.8,0.2);
 		}
 		else // never should happen
 		{
@@ -949,6 +952,150 @@ void main() {
 	}
 	float visibility = (numAORays>0) ? 1.0 - (k/float(numAORays)) : 1.0;
 	output_t = visibility * visibility;
+}
+
+#elif PATH_TRACE_MODE
+
+// uniform float time;
+// uniform uint ptFrame; // how many path trace frames have been rendered
+// uniform vec2 resolution;
+
+// uint wang_hash(inout uint seed) {
+//   seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
+//   seed *= uint(9);
+//   seed = seed ^ (seed >> 4);
+//   seed *= uint(0x27d4eb2d);
+//   seed = seed ^ (seed >> 15);
+//   return seed;
+// }
+ 
+// float RandomFloat01(inout uint state) {
+//     return float(wang_hash(state)) / 4294967296.0;
+// }
+ 
+// vec3 RandomUnitVector(inout uint state) {
+//   float z = RandomFloat01(state) * 2.0f - 1.0f;
+//   float a = RandomFloat01(state) * 3.14159 * 2.0f;
+//   float r = sqrt(1.0f - z * z);
+//   float x = r * cos(a);
+//   float y = r * sin(a);
+//   return vec3(x, y, z);
+// }
+
+
+
+// void main() {
+//   // Path tracing based on https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
+
+//   // vec2 coord = ivec2(gl_FragCoord.xy);
+// 	// vec3 hitPos = texelFetch(hitPosTex, coord, 0).xyz;
+// 	// if (hitPos == vec3(0,0,0)) discard;
+// 	// float cellSize = texelFetch(depthTex, coord, 0).y;
+// 	// vec3 hitNorm = texelFetch(hitNormTex, coord, 0).xyz;
+// 	// hitPos += hitNorm * 1e-3; // add epsilon, not sure why yet?
+
+//   // initialize a random number state based on frag coord and frame
+//   uint rngState = uint(uint(gl_FragCoord.x) * uint(1973) + uint(gl_FragCoord.y) * uint(9277) + uint(ptFrame) * uint(26699)) | uint(1);
+
+//   // calculate subpixel camera jitter for anti aliasing
+//   vec2 dirJitter = vec2(RandomFloat01(rngState), RandomFloat01(rngState)) - 0.5f;
+//   // origin jitter for depth of field
+//   vec3 origJitter = vec3(RandomFloat01(rngState), RandomFloat01(rngState), RandomFloat01(rngState)) - 0.5f;
+
+//   vec2 screenCoords = ((gl_FragCoord.xy + dirJitter) / resolution) * 2.0 - 1.0;
+
+//   // Initial ray: Shoot through this pixel
+//   Ray r = computeCameraRay(screenCoords);
+//   float epsilon = 1E-3f;
+//   vec2 t_min_max = vec2(useBeamOptimization ? 0.95 * getMinT(8) : 0., 1e30f);
+
+//   r.o += origJitter * depthOfField; // Depth of field: randomly move the camera origin for each sample
+
+//   vec3 hitPos;
+//   vec3 hitNorm;
+//   vec4 result;
+//   vec3 albedo;
+//   int nodeIndex;
+
+//   vec3 color = vec3(0);
+//   vec3 throughput = vec3(1);
+
+//   float nBounces = 0.;
+
+//   for (int i = 0; i < nPathTraceBounces + 1; i++) {
+//     nBounces += 1.;
+
+//     // stack_size = 0u; // might need to reset the stack. Shouldn't be needed though, as ray starts where previous ends (?)
+// 	  result = trace_ray(r, t_min_max, projectionFactor, hitNorm);
+
+//     if (result.x < 0.) { // no hit: For now, background is pure white light, could use environment map or procedurally generated sky
+//       // color += vec3(0.8) * throughput;  // constant white color
+//       color += abs(r.d) * throughput;  // ray direction as color
+//       break;
+//     }
+
+//     nodeIndex = int(result.w);
+//     albedo = uniqueColors ? uniqueNodeColor(nodeIndex) : vec3(0.8);
+
+//     // Next ray to bounce around starts at the hit position of the previous ray
+//     r.o = r.o + result.x * r.d;
+//     // And points into random direction relative to the hit normal
+//     r.d = normalize(hitNorm + RandomUnitVector(rngState));
+
+//     // Store initial hit position (which is the origin of the next bounce ray)
+//     if (i == 0) hitPos = r.o;
+
+//     // add emissive lighting to color
+//     // float emissionFreq =  32. * 2. * 3.14159 / rootHalfSide;
+//     // float emissiveness = abs((r.o.x - 50.)) < 0.1 ? 20. : 0.; 
+//     // color += emissiveness * r.d * throughput; // (material emissiveness, e.g. could make all green nodes emissive for fun)
+
+//     // color of light carried by ray is affected by the material it hits
+//     throughput *= albedo;
+
+//     // Russian Roulette
+//     // As the throughput gets smaller, the ray is more likely to get terminated early.
+//     // Survivors have their value boosted to make up for fewer samples being in the average.
+//     {
+//         float p = max(throughput.r, max(throughput.g, throughput.b));
+//         if (RandomFloat01(rngState) > p)
+//             break;
+    
+//         // Add the energy we 'lose' by randomly terminating paths
+//         throughput *= 1.0f / p;
+//     }
+
+//     // Prepare next ray
+//     t_min_max.x = epsilon;
+//   }
+
+// #if 0 // DEBUG to see how many bounces are performed per pixel
+//   color.gb = vec2(nBounces) / vec2(nPathTraceBounces); // / 100.
+// #endif
+
+//   // average the frames together
+
+//   // TODO: Could also apply re-projection:
+//   // For this hit-point, look up the pixel coordinate it was in the previous frame using the previous frame's camera matrix
+//   // and average the color of that pixel in the previous frame with the color of this one
+//   // This would "solve" the noise you see for the first frame(s) after the camera updates
+//   // An example implementation is here, looks relatively easy: https://www.shadertoy.com/view/3tsyzl
+  
+//   // Mix previous frame's color with current color
+//   // color = mix(lastFrameColor, color, 1.0f / float(ptFrame + 1u));
+
+//   if (ptFrame > 0u) {
+//     // vec3 lastFrameColor = texelFetch(prevFrameTex, ivec2(gl_FragCoord.xy), 0).rgb; // pick same pixel as this frame
+//     vec3 lastFrameColor = reproject(hitPos); // re-project the pixel for the hit position we found in the last frame
+//     if (lastFrameColor.x > 0.) {
+//       color = mix(lastFrameColor, color, 0.06); // todo: could weight earlier frames higher than late frames (when view updates)
+//     }
+//   }
+
+//   output_t = vec4(color, 1);
+// }
+
+void main() {
 }
 
 #endif

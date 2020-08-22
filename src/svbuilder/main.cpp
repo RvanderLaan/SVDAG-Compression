@@ -177,7 +177,10 @@ int main(int argc, char ** argv) {
 		// For OBJs with very large bboxes, rendering is bugging out. Fix: Rescale bbox
 		// TODO: When scene origin point is inside bbox, weird lines appear along all axes. Maybe fix by moving bbox start to origin?
 		float bboxSize = scene.getAABB()[0].distance_to(scene.getAABB()[1]);
-		float maxBboxSize = 100000.f;
+		// float maxBboxSize = 10000.f;
+
+		// std::cout << "BBOX: " + std::to_string(bboxSize) + ". Initially: " << scene.getAABB() << std::endl;
+
 		if (bboxSize > maxBboxSize || bboxSize < 0.1) {
 			std::cout << "Normalizing bbox; too small/large: " + std::to_string(bboxSize) + ". Initially: " << scene.getAABB() << std::endl;
 			sl::vector3f newBboxMax = (scene.getAABB()[1] - scene.getAABB()[0]).ok_normalized();

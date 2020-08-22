@@ -37,8 +37,8 @@
 #include "imgui_impl_glfw.h"
 
 #define UPDATE_INFO_TIME 200.0 // ms
-#define SCREEN_WIDTH	1280
-#define SCREEN_HEIGHT	720
+#define SCREEN_WIDTH	1600
+#define SCREEN_HEIGHT	900
 
 bool finish = false;
 bool printCamera = false;
